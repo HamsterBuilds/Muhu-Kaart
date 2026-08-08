@@ -75,13 +75,27 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       layersRef.current.me = L.layerGroup().addTo(map);
       mapRef.current = map;
       map.fitBounds(MUHU_BOUNDS);
+
+      // Leaflet mõõdab konteineri kohe – hoia suurus paigas ka pärast layouti muutust
+      const fix = () => {
+        map.invalidateSize();
+        map.fitBounds(MUHU_BOUNDS);
+      };
+      requestAnimationFrame(fix);
+      setTimeout(fix, 300);
+      const ro = new ResizeObserver(() => map.invalidateSize());
+      ro.observe(containerRef.current);
+      roRef.current = ro;
     })();
     return () => {
       cancelled = true;
+      roRef.current?.disconnect();
+      roRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
   }, []);
+
 
   useEffect(() => {
     const L = leafletRef.current;
