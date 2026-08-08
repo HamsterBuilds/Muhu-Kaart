@@ -76,24 +76,41 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      {
+        name: "viewport",
+        content: "width=device-width, initial-scale=1, viewport-fit=cover",
+      },
+      { title: "Minu Muhu punktid" },
+      {
+        name: "description",
+        content:
+          "Muhu saare kaardirakendus teekonna jälgimiseks ja lemmikkohtade jagamiseks.",
+      },
+      { property: "og:title", content: "Minu Muhu punktid" },
+      {
+        property: "og:description",
+        content:
+          "Muhu saare kaardirakendus teekonna jälgimiseks ja lemmikkohtade jagamiseks.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "theme-color", content: "#f7f4ec" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Outfit:wght@400;500;600&display=swap",
+      },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
+
   shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
