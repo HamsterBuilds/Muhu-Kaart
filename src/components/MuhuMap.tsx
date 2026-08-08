@@ -54,8 +54,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         maxBounds: MUHU_BOUNDS,
         maxBoundsViscosity: 1,
         zoomControl: false,
-achtung: undefined as never,
-      } as never);
+      });
+
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
