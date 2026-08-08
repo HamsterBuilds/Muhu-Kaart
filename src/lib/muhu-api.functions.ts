@@ -3,10 +3,6 @@ import { z } from "zod";
 
 const CodeSchema = z.string().regex(/^\d{6}$/);
 
-type Admin = Awaited<
-  ReturnType<typeof import("@/integrations/supabase/client.server")["then"]>
->;
-
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
@@ -231,9 +227,9 @@ export const updatePoint = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireUser(data.code);
     const db = await admin();
-    const patch: Record<string, string> = {};
-    if (data.title !== undefined) patch['title'] = data.title.trim();
-    if (data.description !== undefined) patch['description'] = data.description.trim();
+    const patch: { title?: string; description?: string } = {};
+    if (data.title !== undefined) patch.title = data.title.trim();
+    if (data.description !== undefined) patch.description = data.description.trim();
     const { error } = await db
       .from("points")
       .update(patch)
@@ -348,5 +344,3 @@ export const listMyTracks = createServerFn({ method: "POST" })
         .map((p) => [p.lat, p.lng] as [number, number]),
     }));
   });
-
-export type Admin_ = Admin;
