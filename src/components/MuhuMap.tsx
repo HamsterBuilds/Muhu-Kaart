@@ -36,6 +36,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     {},
   );
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
 
