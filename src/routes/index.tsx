@@ -87,13 +87,23 @@ function MuhuApp() {
   }
 
   const submitPoint = () => {
-    if (!pos) return toast.error("Asukoht pole veel teada");
-    if (!onMuhu) return toast.error("Punkte saab lisada ainult Muhu saarel");
-    if (!groupId) return toast.error("Vali esmalt grupp");
+    if (!pos) {
+      toast.error("Asukoht pole veel teada");
+      return;
+    }
+    if (!onMuhu) {
+      toast.error("Punkte saab lisada ainult Muhu saarel");
+      return;
+    }
+    if (!groupId) {
+      toast.error("Vali esmalt grupp");
+      return;
+    }
     add.mutate({ title, lat: pos.lat, lng: pos.lng });
     setTitle("");
     setAdding(false);
   };
+
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-background">
