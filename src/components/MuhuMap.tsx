@@ -62,8 +62,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
         maxZoom: 18,
-        bounds: MUHU_BOUNDS,
       }).addTo(map);
+
 
       L.polygon(MUHU_OUTLINE, {
         color: "#1f5f4f",
