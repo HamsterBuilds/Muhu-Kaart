@@ -55,6 +55,24 @@ function MuhuApp() {
     setReady(true);
   }, []);
 
+  const listGroupsFn = useServerFn(listGroups);
+  const groupsQuery = useQuery({
+    queryKey: ["groups", code],
+    enabled: !!code,
+    queryFn: () => listGroupsFn({ data: { code: code! } }),
+  });
+
+  useEffect(() => {
+    const list = groupsQuery.data;
+    if (!list?.length) return;
+    const active = list.find((g) => g.id === groupId) ?? list[0]!;
+    setGroupId(active.id);
+    setGroupName(active.name);
+    setGroupCode(active.join_code);
+    saveGroup(active.id);
+  }, [groupsQuery.data, groupId]);
+
+
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
   const { tracking, liveTrack, start, stop } = useTracking(code, pos);
