@@ -21,20 +21,42 @@ export function useGeolocation(active: boolean) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!active || typeof navigator === "undefined" || !navigator.geolocation) return;
-    const id = navigator.geolocation.watchPosition(
-      (p) => {
-        setPos({ lat: p.coords.latitude, lng: p.coords.longitude });
-        setError(null);
-      },
-      (e) => setError(e.message),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
+    if (!active || typeof window === "undefined") return;
+    let cancelled = false;
+    let clear: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const { Geolocation } = await import("@capacitor/geolocation");
+        await Geolocation.requestPermissions().catch(() => undefined);
+        const id = await Geolocation.watchPosition(
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 },
+          (p, err) => {
+            if (cancelled) return;
+            if (err || !p) {
+              setError(err?.message ?? "Asukohta ei saa");
+              return;
+            }
+            setPos({ lat: p.coords.latitude, lng: p.coords.longitude });
+            setError(null);
+          },
+        );
+        if (cancelled) void Geolocation.clearWatch({ id });
+        else clear = () => void Geolocation.clearWatch({ id });
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Asukohta ei saa");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      clear?.();
+    };
   }, [active]);
 
   return { pos, error, onMuhu: pos ? isOnMuhu(pos.lat, pos.lng) : false };
 }
+
 
 export function useMuhuData(code: string | null, groupId: string | null) {
   const listPointsFn = useServerFn(listPoints);

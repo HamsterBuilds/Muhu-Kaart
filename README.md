@@ -27,3 +27,15 @@ npm run dev
 - TypeScript
 - React
 - Tailwind CSS
+
+## APK ehitamine (Android)
+
+1. Ekspordi projekt GitHubi ja tee `git pull` oma arvutis, siis `npm install`.
+2. `npx cap add android`
+3. `npm run build && npx cap sync android`
+4. `npx cap run android` (või ava Android Studios ja tee Build > Build APK).
+
+Märkused:
+- `capacitor.config.ts` `server.url` laeb live-preview'd. Eemalda see enne poodi minemist, et äpp kasutaks pakendatud faile.
+- Asukoha lubadeks lisa `android/app/src/main/AndroidManifest.xml` faili:
+  `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`.
