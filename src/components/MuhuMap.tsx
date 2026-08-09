@@ -11,8 +11,14 @@ export type MapPoint = {
   lat: number;
   lng: number;
   mine: boolean;
+  visited: boolean;
   authorName: string;
 };
+
+const SHOPS: { name: string; lat: number; lng: number }[] = [
+  { name: "Liiva pood", lat: 58.5909, lng: 23.1526 },
+  { name: "Hellamaa pood", lat: 58.6408, lng: 23.1874 },
+];
 
 type Props = {
   points: MapPoint[];
