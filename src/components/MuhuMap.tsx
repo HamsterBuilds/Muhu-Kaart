@@ -124,11 +124,12 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     if (!L || !layer) return;
     layer.clearLayers();
     for (const p of points) {
+      const green = p.mine || p.visited;
       const marker = L.circleMarker([p.lat, p.lng], {
         radius: 9,
-        color: p.mine ? "#0f3d33" : "#b4531f",
+        color: green ? "#0f3d33" : "#7a1f1f",
         weight: 3,
-        fillColor: p.mine ? "#2f9e7f" : "#e8863f",
+        fillColor: green ? "#2f9e7f" : "#d9453c",
         fillOpacity: 0.95,
       });
       marker.bindTooltip(escapeHtml(p.title), { direction: "top" });
