@@ -16,8 +16,8 @@ export type MapPoint = {
 };
 
 const SHOPS: { name: string; lat: number; lng: number }[] = [
-  { name: "Liiva pood", lat: 58.5909, lng: 23.1526 },
-  { name: "Hellamaa pood", lat: 58.6408, lng: 23.1874 },
+  { name: "Liiva pood (Coop Konsum)", lat: 58.6058919, lng: 23.2312519 },
+  { name: "Hellamaa pood (Coop)", lat: 58.6068581, lng: 23.310735 },
 ];
 
 type Props = {
