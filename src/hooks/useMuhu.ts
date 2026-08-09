@@ -12,6 +12,8 @@ import {
   listMyTracks,
   listPoints,
   startTrack,
+  toggleVisit,
+  updatePoint,
 } from "@/lib/muhu-api.functions";
 
 export type Position = { lat: number; lng: number };
@@ -145,6 +147,8 @@ export function usePointActions(code: string | null, groupId: string | null) {
   const addFn = useServerFn(addPoint);
   const enrichFn = useServerFn(enrichPoint);
   const deleteFn = useServerFn(deletePoint);
+  const visitFn = useServerFn(toggleVisit);
+  const updateFn = useServerFn(updatePoint);
 
   const add = useMutation({
     mutationFn: async (input: { title: string; lat: number; lng: number }) => {
@@ -175,5 +179,32 @@ export function usePointActions(code: string | null, groupId: string | null) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  return { add, remove };
+  const setVisited = useMutation({
+    mutationFn: (input: { id: string; visited: boolean }) =>
+      visitFn({ data: { code: code!, pointId: input.id, visited: input.visited } }),
+    onSuccess: (_r, input) => {
+      void qc.invalidateQueries({ queryKey: ["points", groupId] });
+      toast.success(input.visited ? "Märgitud käiduks" : "Käidud märge eemaldatud");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const update = useMutation({
+    mutationFn: (input: { id: string; title?: string; description?: string }) =>
+      updateFn({
+        data: {
+          code: code!,
+          pointId: input.id,
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+        },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["points", groupId] });
+      toast.success("Salvestatud");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return { add, remove, setVisited, update };
 }

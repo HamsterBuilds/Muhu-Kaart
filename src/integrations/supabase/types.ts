@@ -103,6 +103,42 @@ export type Database = {
           },
         ]
       }
+      point_visits: {
+        Row: {
+          created_at: string
+          id: string
+          point_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          point_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          point_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "point_visits_point_id_fkey"
+            columns: ["point_id"]
+            isOneToOne: false
+            referencedRelation: "points"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "point_visits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       points: {
         Row: {
           ai_status: string

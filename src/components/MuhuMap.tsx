@@ -11,8 +11,14 @@ export type MapPoint = {
   lat: number;
   lng: number;
   mine: boolean;
+  visited: boolean;
   authorName: string;
 };
+
+const SHOPS: { name: string; lat: number; lng: number }[] = [
+  { name: "Liiva pood", lat: 58.5909, lng: 23.1526 },
+  { name: "Hellamaa pood", lat: 58.6408, lng: 23.1874 },
+];
 
 type Props = {
   points: MapPoint[];
@@ -72,6 +78,19 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         dashArray: "4 6",
       }).addTo(map);
 
+      for (const shop of SHOPS) {
+        L.marker([shop.lat, shop.lng], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div style="display:flex;align-items:center;gap:4px;transform:translate(-10px,-10px)"><div style="width:20px;height:20px;border-radius:6px;background:#2f4d8f;border:2px solid #ffffff;box-shadow:0 1px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px">🛒</div></div>`,
+            iconSize: [20, 20],
+          }),
+          interactive: true,
+        })
+          .bindTooltip(escapeHtml(shop.name), { direction: "top", permanent: false })
+          .addTo(map);
+      }
+
       layersRef.current.tracks = L.layerGroup().addTo(map);
       layersRef.current.points = L.layerGroup().addTo(map);
       layersRef.current.me = L.layerGroup().addTo(map);
@@ -105,11 +124,12 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     if (!L || !layer) return;
     layer.clearLayers();
     for (const p of points) {
+      const green = p.mine || p.visited;
       const marker = L.circleMarker([p.lat, p.lng], {
         radius: 9,
-        color: p.mine ? "#0f3d33" : "#b4531f",
+        color: green ? "#0f3d33" : "#7a1f1f",
         weight: 3,
-        fillColor: p.mine ? "#2f9e7f" : "#e8863f",
+        fillColor: green ? "#2f9e7f" : "#d9453c",
         fillOpacity: 0.95,
       });
       marker.bindTooltip(escapeHtml(p.title), { direction: "top" });

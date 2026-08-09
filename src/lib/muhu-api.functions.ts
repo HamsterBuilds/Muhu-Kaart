@@ -137,6 +137,16 @@ export const listPoints = createServerFn({ method: "POST" })
       .eq("group_id", data.groupId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
+    const ids = (rows ?? []).map((r) => r.id as string);
+    const visited = new Set<string>();
+    if (ids.length) {
+      const { data: visits } = await db
+        .from("point_visits")
+        .select("point_id")
+        .eq("user_id", user.id)
+        .in("point_id", ids);
+      for (const v of visits ?? []) visited.add(v.point_id as string);
+    }
     return (rows ?? []).map((r) => ({
       id: r.id as string,
       title: r.title as string,
@@ -147,8 +157,44 @@ export const listPoints = createServerFn({ method: "POST" })
       aiStatus: r.ai_status as string,
       createdAt: r.created_at as string,
       mine: r.user_id === user.id,
+      visited: visited.has(r.id as string),
       authorName: ((r.app_users as { name?: string } | null)?.name ?? "?") as string,
     }));
+  });
+
+export const toggleVisit = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z
+      .object({ code: CodeSchema, pointId: z.string().uuid(), visited: z.boolean() })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireUser(data.code);
+    const db = await admin();
+    const { data: point } = await db
+      .from("points")
+      .select("id, group_id")
+      .eq("id", data.pointId)
+      .maybeSingle();
+    if (!point) throw new Error("Punkti ei leitud");
+    await requireMember(user.id, point.group_id as string);
+    if (data.visited) {
+      const { error } = await db
+        .from("point_visits")
+        .upsert(
+          { point_id: data.pointId, user_id: user.id },
+          { onConflict: "point_id,user_id" },
+        );
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await db
+        .from("point_visits")
+        .delete()
+        .eq("point_id", data.pointId)
+        .eq("user_id", user.id);
+      if (error) throw new Error(error.message);
+    }
+    return { visited: data.visited };
   });
 
 export const addPoint = createServerFn({ method: "POST" })

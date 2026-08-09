@@ -80,7 +80,7 @@ function MuhuApp() {
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
   const { tracking, liveTrack, start, stop } = useTracking(code, pos);
-  const { add, remove } = usePointActions(code, groupId);
+  const { add, remove, setVisited, update } = usePointActions(code, groupId);
 
   const points = pointsQuery.data ?? [];
   const tracks = useMemo(() => {
@@ -180,6 +180,8 @@ function MuhuApp() {
             remove.mutate(id);
             setSelected(null);
           }}
+          onToggleVisited={(id, visited) => setVisited.mutate({ id, visited })}
+          onSave={(id, values) => update.mutate({ id, ...values })}
         />
       )}
 
