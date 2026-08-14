@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Muhu punktid</string>
+    <string name="title_activity_main">Muhu punktid</string>
+    <string name="package_name">app.lovable.muhupunktid</string>
+    <string name="custom_url_scheme">app.lovable.muhupunktid</string>
+    <!-- OAuth web client used by FirebaseAuthentication for Google ID tokens. -->
+    <string name="default_web_client_id" translatable="false">503405764465-bqamcr6gd96t12vaj0n14ijiqasmhjn3.apps.googleusercontent.com</string>
+</resources>
