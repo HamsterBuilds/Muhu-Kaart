@@ -11,6 +11,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [emailMode, setEmailMode] = useState(false);
+  const [started, setStarted] = useState(false);
   const [authenticatedUser, setAuthenticatedUser] = useState<User | null>(null);
   const [groupName, setGroupName] = useState("");
   const [joinCode, setJoinCode] = useState("");
@@ -60,6 +61,27 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
     </div>
   );
 
+  if (!started) return (
+    <div className="relative flex min-h-dvh flex-col items-center overflow-hidden bg-[#c7ecfb] text-center">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent_0%,transparent_38%,rgba(255,255,255,0.72)_72%,#fff_88%)]" />
+      <div className="pointer-events-none absolute -left-12 top-[55%] h-52 w-52 rounded-full bg-[#fff5a8]/40 blur-3xl" />
+      <div className="pointer-events-none absolute -right-12 top-[74%] h-64 w-64 rounded-full bg-[#c9e4ff]/70 blur-3xl" />
+      <div className="relative flex min-h-dvh w-full max-w-md flex-col items-center px-6 pt-7">
+        <div className="flex w-full items-start justify-between px-1">
+          <div className="h-28 w-28 rounded-full bg-white" />
+          <div className="mt-12 h-24 w-24 rounded-full bg-white" />
+          <div className="h-28 w-28 rounded-full bg-white" />
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center pb-8">
+          <h1 className="max-w-sm font-display text-[clamp(4rem,17vw,6.5rem)] font-black leading-[0.86] tracking-[-0.06em] text-[#242224]">Muhu<br />kaart</h1>
+        </div>
+        <button type="button" onClick={() => setStarted(true)} className="relative mb-7 w-[78%] max-w-sm rounded-full bg-[#292729] px-6 py-5 text-xl font-semibold text-white shadow-lg transition-transform hover:scale-[1.01] active:scale-[0.98]">Alusta</button>
+        <p className="relative mb-8 text-lg font-medium text-[#242224]">Roberti poolt</p>
+      </div>
+      <div className="relative flex h-20 w-full items-center justify-center bg-[#292729] text-lg font-semibold text-white">Muhu kaart</div>
+    </div>
+  );
+
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-8 bg-background px-6 py-12">
       <header className="mx-auto max-w-md space-y-3 text-center">
@@ -67,7 +89,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
           Muhu saar
         </p>
         <h1 className="font-display text-4xl leading-tight text-foreground">
-          Minu Muhu punktid
+          Muhu kaart
         </h1>
         <p className="text-sm text-muted-foreground">
           Jälgi oma teekonda saarel, märgi lahedad kohad ja jaga neid sõpradega.
