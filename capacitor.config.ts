@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "ee.muhukaart.app",
+  appId: "app.lovable.muhupunktid",
   appName: "Muhu punktid",
   webDir: "dist",
   plugins: {
