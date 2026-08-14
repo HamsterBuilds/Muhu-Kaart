@@ -55,7 +55,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
           </button>
         </div>
 
-        {mode === "new" ? (
+        <>
           <label className="block space-y-2">
             {mode === "new" && <><span className="text-sm font-medium text-foreground">Sinu nimi</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nt. Mari" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" /></>}
             <span className="text-sm font-medium text-foreground">E-post</span>
@@ -69,7 +69,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
             <span className="text-sm font-medium text-foreground">Parool</span>
             <input value={password} type="password" onChange={(e) => setPassword(e.target.value)} placeholder="Vähemalt 6 tähemärki" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" />
           </label>
-        )}
+        </>
 
         <button
           disabled={busy || email.trim().length < 5 || password.length < 6 || (mode === "new" && name.trim().length < 2)}
