@@ -1,0 +1,4 @@
+{
+  "redeployRequestedAt": "2026-08-14",
+  "reason": "Trigger a fresh Lovable deployment after mobile sign-in fix"
+}
