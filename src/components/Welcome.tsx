@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { createFirebaseGroup, joinFirebaseGroup, loginFirebaseUser, loginWithGoogle, registerFirebaseUser } from "@/lib/firebase-data";
 
@@ -16,6 +16,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
   const [groupName, setGroupName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
+  const readInputValue = (event: FormEvent<HTMLInputElement>) => event.currentTarget.value;
 
   const submit = async () => {
     setBusy(true);
@@ -115,20 +116,23 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
 
         {emailMode && <>
           <div className="space-y-4">
-            {mode === "new" && <><span className="text-sm font-medium text-foreground">Sinu nimi</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nt. Mari" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" /></>}
+            {mode === "new" && <><span className="text-sm font-medium text-foreground">Sinu nimi</span><input value={name} onInput={(event) => setName(readInputValue(event))} placeholder="Nt. Mari" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" /></>}
             <label htmlFor="auth-email" className="text-sm font-medium text-foreground">E-post</label>
             <input
               id="auth-email"
               autoComplete="email"
               inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={email}
               type="email"
-              onChange={(e) => setEmail(e.target.value)}
+              onInput={(event) => setEmail(readInputValue(event))}
               placeholder="sina@email.ee"
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent"
             />
             <span className="text-sm font-medium text-foreground">Parool</span>
-            <input value={password} type="password" onChange={(e) => setPassword(e.target.value)} placeholder="Vähemalt 6 tähemärki" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" />
+            <input value={password} type="password" autoCapitalize="none" autoCorrect="off" spellCheck={false} onInput={(event) => setPassword(readInputValue(event))} placeholder="Vähemalt 6 tähemärki" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" />
           </div>
         </>}
 
