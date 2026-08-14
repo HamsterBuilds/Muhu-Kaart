@@ -10,6 +10,17 @@ export type MapPointData = { id: string; title: string; description: string | nu
 const uid = () => firebaseAuth.currentUser?.uid ?? (() => { throw new Error("Palun logi sisse"); })();
 const code = () => String(Math.floor(100000 + Math.random() * 900000));
 
+function toGoogleSignInError(error: unknown): Error {
+  if (!(error instanceof Error)) return new Error("Google’i sisselogimine ebaõnnestus.");
+  const message = error.message.trim();
+  if (message.startsWith("10:") || message === "10" || /DEVELOPER_ERROR/i.test(message)) {
+    return new Error(
+      "Google’i sisselogimine pole Androidis õigesti seadistatud (viga 10). Kontrolli Firebase’i Google Sign-In seadistust, Androidi package name’i ning SHA-1/SHA-256 võtmeid.",
+    );
+  }
+  return error;
+}
+
 export async function registerFirebaseUser(name: string, email: string, password: string) {
   const credential = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
   await setDoc(doc(firestore, "users", credential.user.uid), { name: name.trim(), email: email.trim(), createdAt: serverTimestamp() });
@@ -22,16 +33,20 @@ export async function loginFirebaseUser(email: string, password: string) {
 }
 export async function loginWithGoogle() {
   if (Capacitor.isNativePlatform()) {
-    const result = await FirebaseAuthentication.signInWithGoogle({ skipNativeAuth: true, useCredentialManager: false });
-    const idToken = result.credential?.idToken;
-    // A missing token usually means the Android OAuth client/SHA-1 is not configured.
-    if (!idToken) throw new Error("Google’i sisselogimise token puudub. Kontrolli Androidi Google OAuth seadistust.");
-    const credential = await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
-    const ref = doc(firestore, "users", credential.user.uid);
-    const existing = await getDoc(ref);
-    if (!existing.exists()) await setDoc(ref, { name: credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "", createdAt: serverTimestamp() });
-    const data = existing.data();
-    return { id: credential.user.uid, name: (data?.name as string | undefined) ?? credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "" } satisfies FirebaseUser;
+    try {
+      const result = await FirebaseAuthentication.signInWithGoogle({ skipNativeAuth: true, useCredentialManager: false });
+      const idToken = result.credential?.idToken;
+      // A missing token usually means the Android OAuth client/SHA-1 is not configured.
+      if (!idToken) throw new Error("Google’i sisselogimise token puudub. Kontrolli Androidi Google OAuth seadistust.");
+      const credential = await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
+      const ref = doc(firestore, "users", credential.user.uid);
+      const existing = await getDoc(ref);
+      if (!existing.exists()) await setDoc(ref, { name: credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "", createdAt: serverTimestamp() });
+      const data = existing.data();
+      return { id: credential.user.uid, name: (data?.name as string | undefined) ?? credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "" } satisfies FirebaseUser;
+    } catch (error) {
+      throw toGoogleSignInError(error);
+    }
   }
   const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
   const ref = doc(firestore, "users", credential.user.uid);
