@@ -114,10 +114,13 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
         </div>}
 
         {emailMode && <>
-          <label className="block space-y-2">
+          <div className="space-y-4">
             {mode === "new" && <><span className="text-sm font-medium text-foreground">Sinu nimi</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nt. Mari" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" /></>}
-            <span className="text-sm font-medium text-foreground">E-post</span>
+            <label htmlFor="auth-email" className="text-sm font-medium text-foreground">E-post</label>
             <input
+              id="auth-email"
+              autoComplete="email"
+              inputMode="email"
               value={email}
               type="email"
               onChange={(e) => setEmail(e.target.value)}
@@ -126,7 +129,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
             />
             <span className="text-sm font-medium text-foreground">Parool</span>
             <input value={password} type="password" onChange={(e) => setPassword(e.target.value)} placeholder="Vähemalt 6 tähemärki" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" />
-          </label>
+          </div>
         </>}
 
         {emailMode && <button
