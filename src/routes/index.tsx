@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { signOut } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import Welcome from "@/components/Welcome";
 import GroupSheet from "@/components/GroupSheet";
 import PointCard from "@/components/PointCard";
@@ -55,9 +56,17 @@ function MuhuApp() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setCode(loadCode());
+    const storedCode = loadCode();
+    setCode(storedCode);
     setGroupId(loadGroup());
     setReady(true);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user && !storedCode) {
+        saveCode(user.uid);
+        setCode(user.uid);
+      }
+    });
+    return unsubscribe;
   }, []);
 
   const groupsQuery = useQuery({

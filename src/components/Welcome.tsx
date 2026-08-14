@@ -83,20 +83,21 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
   );
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-8 bg-background px-6 py-12">
-      <header className="mx-auto max-w-md space-y-3 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-accent">
+    <div className="relative flex min-h-dvh flex-col items-center bg-[#f4f3fb] px-6 py-8">
+      {!emailMode && <button type="button" onClick={() => setStarted(false)} className="absolute left-6 top-8 text-5xl font-light leading-none text-[#242224]" aria-label="Tagasi">‹</button>}
+      <header className="mx-auto mt-32 max-w-md text-center">
+        <p className="hidden text-xs font-semibold uppercase tracking-[0.3em] text-accent">
           Muhu saar
         </p>
-        <h1 className="font-display text-4xl leading-tight text-foreground">
-          Muhu kaart
+        <h1 className="font-sans text-5xl font-black leading-tight tracking-[-0.05em] text-[#242224]">
+          Logi sisse
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="hidden text-sm text-muted-foreground">
           Jälgi oma teekonda saarel, märgi lahedad kohad ja jaga neid sõpradega.
         </p>
       </header>
 
-      <div className="w-full max-w-md p-0">
+      <div className="mt-20 w-full max-w-md p-0">
         {emailMode && <div className="mb-4 flex gap-2 rounded-full bg-secondary p-1 text-sm">
           <button
             className={`flex-1 rounded-full px-3 py-2 font-medium transition-colors ${mode === "new" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
@@ -136,12 +137,12 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
           {busy ? "Hetk..." : mode === "new" ? "Loo konto" : "Logi sisse"}
         </button>}
         {!emailMode && <div className="space-y-3">
-          <button type="button" disabled={busy} onClick={googleSubmit} className="mx-auto flex w-full max-w-sm items-center justify-center gap-3 rounded-full border-2 border-[#777] bg-white px-5 py-4 text-lg font-semibold text-[#202124] shadow-sm transition-transform hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40">
+          <button type="button" disabled={busy} onClick={googleSubmit} className="mx-auto flex h-28 w-full items-center justify-center gap-3 rounded-[2rem] bg-white px-5 text-xl font-semibold text-[#202124] shadow-sm transition-transform hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40">
             <span className="text-2xl font-bold text-[#4285f4]">G</span>
             Sign in with Google
           </button>
-          <button type="button" onClick={() => setEmailMode(true)} className="mx-auto block w-full max-w-sm rounded-full border-2 border-[#777] bg-white px-5 py-4 text-lg font-semibold text-[#202124] shadow-sm transition-transform hover:scale-[1.01] active:scale-[0.99]">
-            Sign in with email
+          <button type="button" onClick={() => setEmailMode(true)} className="mx-auto block h-28 w-full rounded-[2rem] bg-white px-5 text-xl font-semibold text-[#202124] shadow-sm transition-transform hover:scale-[1.01] active:scale-[0.99]">
+            Logi sisse emailiga
           </button>
         </div>}
         {emailMode && <button type="button" onClick={() => setEmailMode(false)} className="mt-3 w-full text-sm text-muted-foreground">← Back to sign in options</button>}
