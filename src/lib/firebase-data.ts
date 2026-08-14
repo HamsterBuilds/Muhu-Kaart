@@ -22,10 +22,10 @@ export async function loginFirebaseUser(email: string, password: string) {
 }
 export async function loginWithGoogle() {
   if (Capacitor.isNativePlatform()) {
-    const result = await FirebaseAuthentication.signInWithGoogle();
+    const result = await FirebaseAuthentication.signInWithGoogle({ skipNativeAuth: true, useCredentialManager: false });
     const idToken = result.credential?.idToken;
     // A missing token usually means the Android OAuth client/SHA-1 is not configured.
-    if (!idToken) throw new Error("Google’i sisselogimise token puudub");
+    if (!idToken) throw new Error("Google’i sisselogimise token puudub. Kontrolli Androidi Google OAuth seadistust.");
     const credential = await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
     const ref = doc(firestore, "users", credential.user.uid);
     const existing = await getDoc(ref);
