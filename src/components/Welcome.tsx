@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { loginFirebaseUser, registerFirebaseUser } from "@/lib/firebase-data";
+import { createFirebaseGroup, joinFirebaseGroup, loginFirebaseUser, loginWithGoogle, registerFirebaseUser } from "@/lib/firebase-data";
 
 type User = { id: string; name: string; email: string; code: string };
 
@@ -10,6 +10,11 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [emailMode, setEmailMode] = useState(false);
+  const [authenticatedUser, setAuthenticatedUser] = useState<User | null>(null);
+  const [groupName, setGroupName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [groupBusy, setGroupBusy] = useState(false);
 
   const submit = async () => {
     setBusy(true);
@@ -17,7 +22,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
       const user = mode === "new"
         ? await registerFirebaseUser(name, email, password)
         : await loginFirebaseUser(email, password);
-      onReady({ ...user, code: user.id });
+      setAuthenticatedUser({ ...user, code: user.id });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Midagi läks valesti");
     } finally {
@@ -25,9 +30,39 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
     }
   };
 
+  const googleSubmit = async () => {
+    setBusy(true);
+    try {
+      const user = await loginWithGoogle();
+      setAuthenticatedUser({ ...user, code: user.id });
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Google’i sisselogimine ebaõnnestus"); }
+    finally { setBusy(false); }
+  };
+
+  if (authenticatedUser) return (
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
+      <div className="w-full max-w-md space-y-6">
+        <header className="space-y-2 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-accent">Tere tulemast</p>
+          <h1 className="font-display text-3xl text-foreground">Liitu grupiga</h1>
+          <p className="text-sm text-muted-foreground">Grupiga liitumine on vajalik, et näha ja jagada Muhu punkte.</p>
+        </header>
+        <div className="space-y-4">
+          <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Uue grupi nimi" className="w-full rounded-xl border border-input bg-background px-4 py-3 outline-none focus:border-accent" />
+          <p className="text-center text-xs text-muted-foreground">või</p>
+          <input value={joinCode} onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="6-kohaline grupikood" className="w-full rounded-xl border border-input bg-background px-4 py-3 tracking-[0.2em] outline-none focus:border-accent" />
+          <button disabled={groupBusy || (groupName.trim().length < 2 && joinCode.length !== 6) || (groupName.trim().length > 0 && joinCode.length === 6)} onClick={async () => { setGroupBusy(true); try { if (groupName.trim()) await createFirebaseGroup(groupName); else await joinFirebaseGroup(joinCode); onReady(authenticatedUser); } catch (e) { toast.error(e instanceof Error ? e.message : "Grupiga liitumine ebaõnnestus"); } finally { setGroupBusy(false); } }} className="w-full rounded-xl bg-primary px-4 py-4 text-base font-semibold text-primary-foreground disabled:opacity-40">
+            {groupBusy ? "Hetk..." : groupName.trim() ? "Loo grupp ja jätka" : "Liitu grupiga ja jätka"}
+          </button>
+          <p className="text-center text-xs text-muted-foreground">Sisesta ainult üks võimalus: loo grupp või kasuta olemasoleva grupi koodi.</p>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="flex min-h-dvh flex-col justify-center gap-8 bg-background px-6 py-12">
-      <header className="space-y-2">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-8 bg-background px-6 py-12">
+      <header className="mx-auto max-w-md space-y-3 text-center">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-accent">
           Muhu saar
         </p>
@@ -39,8 +74,8 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
         </p>
       </header>
 
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="mb-4 flex gap-2 rounded-full bg-secondary p-1 text-sm">
+      <div className="w-full max-w-md p-0">
+        {emailMode && <div className="mb-4 flex gap-2 rounded-full bg-secondary p-1 text-sm">
           <button
             className={`flex-1 rounded-full px-3 py-2 font-medium transition-colors ${mode === "new" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             onClick={() => setMode("new")}
@@ -53,9 +88,9 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
           >
             Logi sisse
           </button>
-        </div>
+        </div>}
 
-        <>
+        {emailMode && <>
           <label className="block space-y-2">
             {mode === "new" && <><span className="text-sm font-medium text-foreground">Sinu nimi</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nt. Mari" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" /></>}
             <span className="text-sm font-medium text-foreground">E-post</span>
@@ -69,15 +104,25 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
             <span className="text-sm font-medium text-foreground">Parool</span>
             <input value={password} type="password" onChange={(e) => setPassword(e.target.value)} placeholder="Vähemalt 6 tähemärki" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" />
           </label>
-        </>
+        </>}
 
-        <button
+        {emailMode && <button
           disabled={busy || email.trim().length < 5 || password.length < 6 || (mode === "new" && name.trim().length < 2)}
           onClick={submit}
           className="mt-5 w-full rounded-xl bg-primary px-4 py-3 text-base font-semibold text-primary-foreground transition-opacity disabled:opacity-40"
         >
           {busy ? "Hetk..." : mode === "new" ? "Loo konto" : "Logi sisse"}
-        </button>
+        </button>}
+        {!emailMode && <div className="space-y-3">
+          <button type="button" disabled={busy} onClick={googleSubmit} className="mx-auto flex w-full max-w-sm items-center justify-center gap-3 rounded-full border-2 border-[#777] bg-white px-5 py-4 text-lg font-semibold text-[#202124] shadow-sm transition-transform hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40">
+            <span className="text-2xl font-bold text-[#4285f4]">G</span>
+            Sign in with Google
+          </button>
+          <button type="button" onClick={() => setEmailMode(true)} className="mx-auto block w-full max-w-sm rounded-full border-2 border-[#777] bg-white px-5 py-4 text-lg font-semibold text-[#202124] shadow-sm transition-transform hover:scale-[1.01] active:scale-[0.99]">
+            Sign in with email
+          </button>
+        </div>}
+        {emailMode && <button type="button" onClick={() => setEmailMode(false)} className="mt-3 w-full text-sm text-muted-foreground">← Back to sign in options</button>}
       </div>
     </div>
   );

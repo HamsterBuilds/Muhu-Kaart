@@ -1,4 +1,4 @@
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 
@@ -17,6 +17,14 @@ export async function loginFirebaseUser(email: string, password: string) {
   const credential = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
   const data = (await getDoc(doc(firestore, "users", credential.user.uid))).data();
   return { id: credential.user.uid, name: (data?.name as string | undefined) ?? "Kasutaja", email: credential.user.email ?? email } satisfies FirebaseUser;
+}
+export async function loginWithGoogle() {
+  const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
+  const ref = doc(firestore, "users", credential.user.uid);
+  const existing = await getDoc(ref);
+  if (!existing.exists()) await setDoc(ref, { name: credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "", createdAt: serverTimestamp() });
+  const data = existing.data();
+  return { id: credential.user.uid, name: (data?.name as string | undefined) ?? credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "" } satisfies FirebaseUser;
 }
 export async function listFirebaseGroups() {
   const memberships = await getDocs(collection(firestore, "users", uid(), "groups"));

@@ -101,7 +101,7 @@ function MuhuApp() {
             saveCode(user.code);
             setCode(user.code);
             setUserName(user.name);
-            setShowGroups(true);
+            setShowGroups(false);
           }}
         />
         <Toaster position="top-center" />
