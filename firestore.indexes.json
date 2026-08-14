@@ -1,0 +1,7 @@
+{
+  "indexes": [
+    { "collectionGroup": "points", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "groupId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tracks", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "startedAt", "order": "DESCENDING" }] }
+  ],
+  "fieldOverrides": []
+}

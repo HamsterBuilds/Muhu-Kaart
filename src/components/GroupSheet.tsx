@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { createGroup, joinGroup, listGroups } from "@/lib/muhu-api.functions";
+import { createFirebaseGroup, joinFirebaseGroup, listFirebaseGroups } from "@/lib/firebase-data";
 
 type Group = { id: string; name: string; join_code: string };
 
@@ -18,19 +17,16 @@ export default function GroupSheet({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const listFn = useServerFn(listGroups);
-  const createFn = useServerFn(createGroup);
-  const joinFn = useServerFn(joinGroup);
   const [name, setName] = useState("");
   const [joinCode, setJoinCode] = useState("");
 
   const groups = useQuery({
     queryKey: ["groups", code],
-    queryFn: () => listFn({ data: { code } }),
+    queryFn: listFirebaseGroups,
   });
 
   const create = useMutation({
-    mutationFn: () => createFn({ data: { code, name } }),
+    mutationFn: () => createFirebaseGroup(name),
     onSuccess: (g) => {
       setName("");
       void qc.invalidateQueries({ queryKey: ["groups", code] });
@@ -41,7 +37,7 @@ export default function GroupSheet({
   });
 
   const join = useMutation({
-    mutationFn: () => joinFn({ data: { code, joinCode } }),
+    mutationFn: () => joinFirebaseGroup(joinCode),
     onSuccess: (g) => {
       setJoinCode("");
       void qc.invalidateQueries({ queryKey: ["groups", code] });

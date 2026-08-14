@@ -145,7 +145,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     layer.clearLayers();
     for (const t of tracks) {
       if (t.length < 2) continue;
-      L.polyline(t, { color: "#2f6fd0", weight: 4, opacity: 0.6 }).addTo(layer);
+      L.polyline(t, { color: "#4361ee", weight: 6, opacity: 0.22, lineCap: "round", lineJoin: "round" }).addTo(layer);
+      L.polyline(t, { color: "#4361ee", weight: 2.5, opacity: 0.9, lineCap: "round", lineJoin: "round" }).addTo(layer);
     }
   }, [tracks]);
 

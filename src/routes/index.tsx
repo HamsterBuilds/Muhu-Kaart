@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { listGroups } from "@/lib/muhu-api.functions";
+import { listFirebaseGroups } from "@/lib/firebase-data";
 
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+import { signOut } from "firebase/auth";
+import { firebaseAuth } from "@/lib/firebase";
 import Welcome from "@/components/Welcome";
 import GroupSheet from "@/components/GroupSheet";
 import PointCard from "@/components/PointCard";
@@ -59,11 +60,10 @@ function MuhuApp() {
     setReady(true);
   }, []);
 
-  const listGroupsFn = useServerFn(listGroups);
   const groupsQuery = useQuery({
     queryKey: ["groups", code],
     enabled: !!code,
-    queryFn: () => listGroupsFn({ data: { code: code! } }),
+    queryFn: listFirebaseGroups,
   });
 
   useEffect(() => {
@@ -83,6 +83,7 @@ function MuhuApp() {
   const { add, remove, setVisited, update } = usePointActions(code, groupId);
 
   const points = pointsQuery.data ?? [];
+  const visitedCount = points.filter((p) => p.visited || p.mine).length;
   const tracks = useMemo(() => {
     const saved = (tracksQuery.data ?? []).map((t) => t.points);
     return liveTrack.length > 1 ? [...saved, liveTrack] : saved;
@@ -152,7 +153,7 @@ function MuhuApp() {
           </button>
           <button
             onClick={() => {
-              clearCode();
+              void signOut(firebaseAuth); clearCode();
               setCode(null);
               setGroupId(null);
             }}
@@ -160,6 +161,12 @@ function MuhuApp() {
           >
             Välju
           </button>
+        </div>
+        <div className="pointer-events-auto mt-2 flex w-fit items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
+          <span className="font-semibold text-foreground">{visitedCount} / {points.length} punkti</span>
+          <span className="h-3 w-px bg-border" />
+          <span className="flex items-center gap-1.5 text-muted-foreground"><i className="h-2.5 w-2.5 rounded-full bg-[#2f9e7f]" /> käidud</span>
+          <span className="flex items-center gap-1.5 text-muted-foreground"><i className="h-2.5 w-2.5 rounded-full bg-[#d9453c]" /> uus</span>
         </div>
         {!onMuhu && (
           <p className="pointer-events-auto mt-2 rounded-xl bg-card/95 px-3 py-2 text-xs text-muted-foreground shadow-sm">

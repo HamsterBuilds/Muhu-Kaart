@@ -1,26 +1,23 @@
 import { useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { loginWithCode, registerUser } from "@/lib/muhu-api.functions";
+import { loginFirebaseUser, registerFirebaseUser } from "@/lib/firebase-data";
 
-type User = { id: string; name: string; code: string };
+type User = { id: string; name: string; email: string; code: string };
 
 export default function Welcome({ onReady }: { onReady: (user: User) => void }) {
-  const registerFn = useServerFn(registerUser);
-  const loginFn = useServerFn(loginWithCode);
-  const [mode, setMode] = useState<"new" | "code">("new");
+  const [mode, setMode] = useState<"new" | "login">("new");
   const [name, setName] = useState("");
-  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     setBusy(true);
     try {
-      const user =
-        mode === "new"
-          ? await registerFn({ data: { name } })
-          : await loginFn({ data: { code } });
-      onReady(user);
+      const user = mode === "new"
+        ? await registerFirebaseUser(name, email, password)
+        : await loginFirebaseUser(email, password);
+      onReady({ ...user, code: user.id });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Midagi läks valesti");
     } finally {
@@ -51,46 +48,35 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
             Olen uus
           </button>
           <button
-            className={`flex-1 rounded-full px-3 py-2 font-medium transition-colors ${mode === "code" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-            onClick={() => setMode("code")}
+            className={`flex-1 rounded-full px-3 py-2 font-medium transition-colors ${mode === "login" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            onClick={() => setMode("login")}
           >
-            Mul on kood
+            Logi sisse
           </button>
         </div>
 
         {mode === "new" ? (
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-foreground">Sinu nimi</span>
+            {mode === "new" && <><span className="text-sm font-medium text-foreground">Sinu nimi</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nt. Mari" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" /></>}
+            <span className="text-sm font-medium text-foreground">E-post</span>
             <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nt. Mari"
+              value={email}
+              type="email"
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="sina@email.ee"
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent"
             />
-            <span className="block text-xs text-muted-foreground">
-              Saad 6-kohalise koodi, millega hiljem sisse logid.
-            </span>
-          </label>
-        ) : (
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-foreground">6-kohaline kood</span>
-            <input
-              value={code}
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="123456"
-              className="w-full rounded-xl border border-input bg-background px-4 py-3 text-center text-2xl tracking-[0.4em] outline-none focus:border-accent"
-            />
+            <span className="text-sm font-medium text-foreground">Parool</span>
+            <input value={password} type="password" onChange={(e) => setPassword(e.target.value)} placeholder="Vähemalt 6 tähemärki" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent" />
           </label>
         )}
 
         <button
-          disabled={busy || (mode === "new" ? name.trim().length < 2 : code.length !== 6)}
+          disabled={busy || email.trim().length < 5 || password.length < 6 || (mode === "new" && name.trim().length < 2)}
           onClick={submit}
           className="mt-5 w-full rounded-xl bg-primary px-4 py-3 text-base font-semibold text-primary-foreground transition-opacity disabled:opacity-40"
         >
-          {busy ? "Hetk..." : mode === "new" ? "Alusta" : "Logi sisse"}
+          {busy ? "Hetk..." : mode === "new" ? "Loo konto" : "Logi sisse"}
         </button>
       </div>
     </div>
