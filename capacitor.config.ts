@@ -7,6 +7,7 @@ const config: CapacitorConfig = {
   plugins: {
     FirebaseAuthentication: {
       providers: ["google.com"],
+      skipNativeAuth: true,
     },
     Geolocation: {
       permissions: ["location"],

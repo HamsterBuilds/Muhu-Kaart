@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   createFirebaseGroup,
@@ -22,7 +22,6 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
   const [groupName, setGroupName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
-  const readInputValue = (event: FormEvent<HTMLInputElement>) => event.currentTarget.value;
 
   const submit = async () => {
     setBusy(true);
@@ -176,12 +175,14 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
           <div className="mb-4 flex gap-2 rounded-full bg-secondary p-1 text-sm">
             <button
               className={`flex-1 rounded-full px-3 py-2 font-medium transition-colors ${mode === "new" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              type="button"
               onClick={() => setMode("new")}
             >
               Olen uus
             </button>
             <button
               className={`flex-1 rounded-full px-3 py-2 font-medium transition-colors ${mode === "login" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              type="button"
               onClick={() => setMode("login")}
             >
               Logi sisse
@@ -197,7 +198,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
                   <span className="text-sm font-medium text-foreground">Sinu nimi</span>
                   <input
                     value={name}
-                    onInput={(event) => setName(readInputValue(event))}
+                    onChange={(event) => setName(event.target.value)}
                     placeholder="Nt. Mari"
                     className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent"
                   />
@@ -215,7 +216,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
                 spellCheck={false}
                 value={email}
                 type="email"
-                onInput={(event) => setEmail(readInputValue(event))}
+                onChange={(event) => setEmail(event.target.value)}
                 placeholder="sina@email.ee"
                 className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent"
               />
@@ -226,7 +227,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                onInput={(event) => setPassword(readInputValue(event))}
+                onChange={(event) => setPassword(event.target.value)}
                 placeholder="Vähemalt 6 tähemärki"
                 className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none focus:border-accent"
               />
