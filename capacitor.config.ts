@@ -1,10 +1,13 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "app.lovable.muhupunktid",
+  appId: "ee.muhukaart.app",
   appName: "Muhu punktid",
   webDir: "dist",
   plugins: {
+    FirebaseAuthentication: {
+      providers: ["google.com"],
+    },
     Geolocation: {
       permissions: ["location"],
     },

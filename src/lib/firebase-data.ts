@@ -1,4 +1,6 @@
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { Capacitor } from "@capacitor/core";
+import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 
@@ -19,6 +21,17 @@ export async function loginFirebaseUser(email: string, password: string) {
   return { id: credential.user.uid, name: (data?.name as string | undefined) ?? "Kasutaja", email: credential.user.email ?? email } satisfies FirebaseUser;
 }
 export async function loginWithGoogle() {
+  if (Capacitor.isNativePlatform()) {
+    const result = await FirebaseAuthentication.signInWithGoogle();
+    const idToken = result.credential?.idToken;
+    if (!idToken) throw new Error("Google’i sisselogimise token puudub");
+    const credential = await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
+    const ref = doc(firestore, "users", credential.user.uid);
+    const existing = await getDoc(ref);
+    if (!existing.exists()) await setDoc(ref, { name: credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "", createdAt: serverTimestamp() });
+    const data = existing.data();
+    return { id: credential.user.uid, name: (data?.name as string | undefined) ?? credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "" } satisfies FirebaseUser;
+  }
   const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
   const ref = doc(firestore, "users", credential.user.uid);
   const existing = await getDoc(ref);
