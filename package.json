@@ -7,6 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "build:capacitor": "vite build --config capacitor.vite.config.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."

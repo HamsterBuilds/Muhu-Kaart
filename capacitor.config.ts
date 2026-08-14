@@ -3,7 +3,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   appId: "app.lovable.muhupunktid",
   appName: "Muhu punktid",
-  webDir: ".output/public",
+  webDir: "dist",
   plugins: {
     Geolocation: {
       permissions: ["location"],
