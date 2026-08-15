@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "503405764465",
+    "project_id": "muhu-kaart",
+    "storage_bucket": "muhu-kaart.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:503405764465:android:e8418e765c41f0543220d0",
+        "android_client_info": {
+          "package_name": "ee.muhukaart.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "503405764465-be51jri353jqi93e1heauv0uo1q0tibs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "ee.muhukaart.app",
+            "certificate_hash": "71d04fbd2137490c22a301cc8c41e5615e4f7d07"
+          }
+        },
+        {
+          "client_id": "503405764465-rmhrnij5d7d5aa1kv4ed5t1fpdi6r496.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "ee.muhukaart.app",
+            "certificate_hash": "7f14d1575700a0f4d8defb041005692f513c488e"
+          }
+        },
+        {
+          "client_id": "503405764465-bqamcr6gd96t12vaj0n14ijiqasmhjn3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBLyu8RMXRfrGaO-nJ4vJlMA7sqFloK2MQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "503405764465-bqamcr6gd96t12vaj0n14ijiqasmhjn3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
