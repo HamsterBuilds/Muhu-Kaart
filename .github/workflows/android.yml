@@ -39,10 +39,14 @@ jobs:
         run: |
           mkdir -p /tmp/android_backup
           cp -r android/app/src/main/res/values/strings.xml /tmp/android_backup/ 2>/dev/null || true
+          cp -r android/app/src/main/AndroidManifest.xml /tmp/android_backup/ 2>/dev/null || true
           rm -rf android
           npx cap add android
           mkdir -p android/app/src/main/res/values
           cp /tmp/android_backup/strings.xml android/app/src/main/res/values/strings.xml 2>/dev/null || true
+          if [ -f "/tmp/android_backup/AndroidManifest.xml" ]; then
+            cp /tmp/android_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          fi
       - name: Setup fixed debug keystore for consistent SHA-1
         run: |
           mkdir -p ~/.android
