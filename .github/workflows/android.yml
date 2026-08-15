@@ -49,7 +49,9 @@ jobs:
           cp android-debug.keystore ~/.android/debug.keystore
       - name: Add Firebase Android configuration
         run: |
-          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" ]; then
+          if [ -f "google-services.json" ]; then
+            cp google-services.json android/app/google-services.json
+          elif [ -n "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" ]; then
             echo '${{ secrets.GOOGLE_SERVICES_JSON_B64 }}' | base64 --decode > android/app/google-services.json
           fi
       - run: npx cap sync android
