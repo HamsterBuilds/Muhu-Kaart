@@ -22,16 +22,25 @@ export async function loginFirebaseUser(email: string, password: string) {
 }
 export async function loginWithGoogle() {
   if (Capacitor.isNativePlatform()) {
-    const result = await FirebaseAuthentication.signInWithGoogle();
-    const idToken = result.credential?.idToken;
-    // A missing token usually means the Android OAuth client/SHA-1 is not configured.
-    if (!idToken) throw new Error("Google’i sisselogimise token puudub");
-    const credential = await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
-    const ref = doc(firestore, "users", credential.user.uid);
-    const existing = await getDoc(ref);
-    if (!existing.exists()) await setDoc(ref, { name: credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "", createdAt: serverTimestamp() });
-    const data = existing.data();
-    return { id: credential.user.uid, name: (data?.name as string | undefined) ?? credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "" } satisfies FirebaseUser;
+    try {
+      const result = await FirebaseAuthentication.signInWithGoogle({
+        useCredentialManager: false,
+      });
+      const idToken = result.credential?.idToken;
+      if (!idToken) throw new Error("Google’i sisselogimise token puudub");
+      const credential = await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
+      const ref = doc(firestore, "users", credential.user.uid);
+      const existing = await getDoc(ref);
+      if (!existing.exists()) await setDoc(ref, { name: credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "", createdAt: serverTimestamp() });
+      const data = existing.data();
+      return { id: credential.user.uid, name: (data?.name as string | undefined) ?? credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "" } satisfies FirebaseUser;
+    } catch (err: any) {
+      const msg = String(err?.message || err || "");
+      if (msg.includes("10:") || msg.includes("DEVELOPER_ERROR")) {
+        throw new Error("Google Sign-In viga 10: Androidi SHA-1 sertifikaadi sõrmejälg pole Firebase konsoolis registreeritud.");
+      }
+      throw err;
+    }
   }
   const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
   const ref = doc(firestore, "users", credential.user.uid);
