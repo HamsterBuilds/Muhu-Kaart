@@ -22,26 +22,42 @@ export async function loginFirebaseUser(email: string, password: string) {
 }
 export async function loginWithGoogle() {
   if (Capacitor.isNativePlatform()) {
+    let idToken: string | undefined;
+
+    // 1. Try modern Android Credential Manager first
     try {
-      const result = await FirebaseAuthentication.signInWithGoogle({
-        useCredentialManager: false,
-      });
-      const idToken = result.credential?.idToken;
-      if (!idToken) throw new Error("Google’i sisselogimise token puudub");
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      idToken = result.credential?.idToken;
+    } catch (err1) {
+      console.warn("Credential Manager failed, trying legacy Google Sign-In intent:", err1);
+    }
+
+    // 2. Try legacy Google Sign-In intent if idToken was not retrieved
+    if (!idToken) {
+      try {
+        const result = await FirebaseAuthentication.signInWithGoogle({
+          useCredentialManager: false,
+        });
+        idToken = result.credential?.idToken;
+      } catch (err2) {
+        console.warn("Legacy Google Sign-In intent failed:", err2);
+      }
+    }
+
+    // 3. If native token received, sign in to Firebase
+    if (idToken) {
       const credential = await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
       const ref = doc(firestore, "users", credential.user.uid);
       const existing = await getDoc(ref);
       if (!existing.exists()) await setDoc(ref, { name: credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "", createdAt: serverTimestamp() });
       const data = existing.data();
       return { id: credential.user.uid, name: (data?.name as string | undefined) ?? credential.user.displayName ?? "Kasutaja", email: credential.user.email ?? "" } satisfies FirebaseUser;
-    } catch (err: any) {
-      const msg = String(err?.message || err || "");
-      if (msg.includes("10:") || msg.includes("DEVELOPER_ERROR")) {
-        throw new Error("Google Sign-In viga 10: Androidi SHA-1 sertifikaadi sõrmejälg pole Firebase konsoolis registreeritud.");
-      }
-      throw err;
     }
+
+    // 4. Fallback to Web Popup / Redirect
+    console.warn("Native Google auth failed, falling back to web popup...");
   }
+
   const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
   const ref = doc(firestore, "users", credential.user.uid);
   const existing = await getDoc(ref);
