@@ -43,6 +43,10 @@ jobs:
           npx cap add android
           mkdir -p android/app/src/main/res/values
           cp /tmp/android_backup/strings.xml android/app/src/main/res/values/strings.xml 2>/dev/null || true
+      - name: Setup fixed debug keystore for consistent SHA-1
+        run: |
+          mkdir -p ~/.android
+          cp android-debug.keystore ~/.android/debug.keystore
       - name: Add Firebase Android configuration
         run: |
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" ]; then
