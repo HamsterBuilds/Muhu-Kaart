@@ -12,12 +12,7 @@ import Welcome from "@/components/Welcome";
 import GroupSheet from "@/components/GroupSheet";
 import PointCard from "@/components/PointCard";
 import { clearCode, loadCode, loadGroup, saveCode, saveGroup } from "@/lib/session";
-import {
-  useGeolocation,
-  useMuhuData,
-  usePointActions,
-  useTracking,
-} from "@/hooks/useMuhu";
+import { useGeolocation, useMuhuData, usePointActions, useTracking } from "@/hooks/useMuhu";
 
 const MuhuMap = lazy(() => import("@/components/MuhuMap"));
 
@@ -85,7 +80,6 @@ function MuhuApp() {
     saveGroup(active.id);
   }, [groupsQuery.data, groupId]);
 
-
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
   const { tracking, liveTrack, start, stop } = useTracking(code, pos);
@@ -123,10 +117,6 @@ function MuhuApp() {
       toast.error("Asukoht pole veel teada");
       return;
     }
-    if (!onMuhu) {
-      toast.error("Punkte saab lisada ainult Muhu saarel");
-      return;
-    }
     if (!groupId) {
       toast.error("Vali esmalt grupp");
       return;
@@ -135,7 +125,6 @@ function MuhuApp() {
     setTitle("");
     setAdding(false);
   };
-
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-background">
@@ -162,7 +151,8 @@ function MuhuApp() {
           </button>
           <button
             onClick={() => {
-              void signOut(firebaseAuth); clearCode();
+              void signOut(firebaseAuth);
+              clearCode();
               setCode(null);
               setGroupId(null);
             }}
@@ -172,17 +162,23 @@ function MuhuApp() {
           </button>
         </div>
         <div className="pointer-events-auto mt-2 flex w-fit items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
-          <span className="font-semibold text-foreground">{visitedCount} / {points.length} punkti</span>
+          <span className="font-semibold text-foreground">
+            {visitedCount} / {points.length} punkti
+          </span>
           <span className="h-3 w-px bg-border" />
-          <span className="flex items-center gap-1.5 text-muted-foreground"><i className="h-2.5 w-2.5 rounded-full bg-[#2f9e7f]" /> käidud</span>
-          <span className="flex items-center gap-1.5 text-muted-foreground"><i className="h-2.5 w-2.5 rounded-full bg-[#d9453c]" /> uus</span>
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <i className="h-2.5 w-2.5 rounded-full bg-[#2f9e7f]" /> käidud
+          </span>
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <i className="h-2.5 w-2.5 rounded-full bg-[#d9453c]" /> uus
+          </span>
         </div>
-        {!onMuhu && (
+        {(!onMuhu || geoError) && (
           <p className="pointer-events-auto mt-2 rounded-xl bg-card/95 px-3 py-2 text-xs text-muted-foreground shadow-sm">
             {geoError
               ? `Asukohta ei saa: ${geoError}`
               : pos
-                ? "Sa ei ole Muhu saarel – jälgimine ja punktide lisamine on väljas."
+                ? "Sa oled Muhu saarest väljas – kaart ja jälgimine töötavad ka siin."
                 : "Otsin sinu asukohta..."}
           </p>
         )}
@@ -235,9 +231,8 @@ function MuhuApp() {
           ) : (
             <div className="flex gap-2">
               <button
-                disabled={!onMuhu}
                 onClick={() => (tracking ? void stop() : void start())}
-                className={`flex-1 rounded-2xl px-4 py-4 text-base font-semibold shadow-lg transition-colors disabled:opacity-40 ${
+                className={`flex-1 rounded-2xl px-4 py-4 text-base font-semibold shadow-lg transition-colors ${
                   tracking
                     ? "bg-destructive text-destructive-foreground"
                     : "bg-primary text-primary-foreground"
@@ -246,7 +241,7 @@ function MuhuApp() {
                 {tracking ? "Lõpeta jälgimine" : "Jälgi mind"}
               </button>
               <button
-                disabled={!onMuhu || !groupId}
+                disabled={!groupId}
                 onClick={() => setAdding(true)}
                 className="flex-1 rounded-2xl bg-accent px-4 py-4 text-base font-semibold text-accent-foreground shadow-lg disabled:opacity-40"
               >
