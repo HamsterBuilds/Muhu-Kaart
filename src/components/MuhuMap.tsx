@@ -1,16 +1,26 @@
-import { useEffect, useRef } from "react";
-import type { Map as LeafletMap, LayerGroup, Polyline as LeafletPolyline } from "leaflet";
+import { useEffect, useRef, useState } from "react";
+import type {
+  Map as LeafletMap,
+  LayerGroup,
+  Polyline as LeafletPolyline,
+  Canvas as LeafletCanvas,
+} from "leaflet";
 import { Crosshair } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { MUHU_CENTER, MUHU_OUTLINE, distanceMeters } from "@/lib/muhu";
 import {
   cellsForBounds,
+  COARSE_DEG,
   fetchRoadsForCells,
+  FINE_DEG,
+  gridDeg,
   isCellStale,
+  modeForZoom,
   roadBBox,
   segmentDistanceMeters,
   type Cell,
   type CellFetchState,
+  type FetchMode,
   type Road,
 } from "@/lib/roads";
 
@@ -33,10 +43,15 @@ const SHOPS: { name: string; lat: number; lng: number }[] = [
 
 const ROAD_COLOR = "#d9453c";
 const TRAVELED_COLOR = "#2f9e7f";
-const ROAD_HIT_METERS = 25;
-const FETCH_MIN_ZOOM = 12;
-const MAX_BATCH_CELLS = 30;
-const MAX_ROADS = 20000;
+/** Kui lähedal peab tee olema, et lõik läbituks märkida (meetrites). */
+const ROAD_HIT_METERS = 2;
+const MAX_BATCH_CELLS = 12;
+const MAX_WORKERS = 2;
+const VIEW_PAD = 0.5;
+const ROADS_PER_CHUNK = 300;
+const MAX_ROADS = 40000;
+const CORRIDOR_TRIGGER_METERS = 120;
+const ROAD_INDEX_DEG = 0.01;
 
 type Props = {
   points: MapPoint[];
@@ -70,20 +85,29 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     me?: LayerGroup;
   }>({});
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const lineRendererRef = useRef<LeafletCanvas | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
+  const [mapReady, setMapReady] = useState(0);
+  const [fetching, setFetching] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(13);
 
   const roadsRef = useRef(new Map<string, Road>());
   const roadBoxRef = useRef(new Map<string, [number, number, number, number]>());
+  const roadSpatialRef = useRef(new Map<string, Set<string>>());
   const cellStateRef = useRef(new Map<string, CellFetchState>());
   const greenRunsRef = useRef(new Map<string, GreenRun[]>());
   const traveledRef = useRef<[number, number][]>([]);
   const lastFixRef = useRef<[number, number] | null>(null);
   const firstFixDoneRef = useRef(false);
   const interactedRef = useRef(false);
-  const fetchingRef = useRef(false);
-  const rerunRef = useRef(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const workQueueRef = useRef<Cell[]>([]);
+  const workersRef = useRef(0);
+  const abortAllRef = useRef<AbortController>(new AbortController());
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const roadChunkPolysRef = useRef<LeafletPolyline[]>([]);
+  const roadWeightRef = useRef(4);
+  const corridorRef = useRef<[number, number] | null>(null);
+  const corridorFetchRef = useRef<(pt: [number, number]) => void>(() => {});
   const processPointRef = useRef<(pt: [number, number]) => void>(() => {});
 
   const selectRef = useRef(onSelect);
@@ -93,6 +117,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     let cancelled = false;
     const roadStore = roadsRef.current;
     const roadBoxStore = roadBoxRef.current;
+    const roadSpatialStore = roadSpatialRef.current;
     const greenRunStore = greenRunsRef.current;
     const cellStateStore = cellStateRef.current;
     (async () => {
@@ -108,6 +133,11 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         zoomControl: false,
         preferCanvas: true,
       });
+
+      // Ühine canvas-renderdaja polstriga: jooned ei lõigataks vaate äärtel ära
+      // ja suur maht renderdatakse sujuvalt ühel lõuendil
+      const lineRenderer = L.canvas({ padding: 0.5 });
+      lineRendererRef.current = lineRenderer;
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
@@ -152,6 +182,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
           opacity: 0.95,
           lineCap: "round",
           lineJoin: "round",
+          renderer: lineRenderer,
         }).addTo(traveledLayer);
         runs.push({
           start: segIdx,
@@ -162,8 +193,23 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         greenRunsRef.current.set(road.id, runs);
       };
 
+      const gridKey = (lat: number, lng: number) =>
+        `${Math.floor(lat / ROAD_INDEX_DEG)}:${Math.floor(lng / ROAD_INDEX_DEG)}`;
+
       const processPoint = (pt: [number, number]) => {
-        for (const [id, box] of roadBoxRef.current) {
+        // Kontrolli ainult lähimate ~1 km ruutude teid, mitte kõiki kaardile
+        // laaditud teid. See hoiab liikumise sujuvana ka kümnete tuhandete teede korral.
+        const candidates = new Set<string>();
+        const y = Math.floor(pt[0] / ROAD_INDEX_DEG);
+        const x = Math.floor(pt[1] / ROAD_INDEX_DEG);
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            for (const id of roadSpatialRef.current.get(`${y + dy}:${x + dx}`) ?? []) candidates.add(id);
+          }
+        }
+        for (const id of candidates) {
+          const box = roadBoxRef.current.get(id);
+          if (!box) continue;
           const [minLat, minLng, maxLat, maxLng] = box;
           if (pt[0] < minLat || pt[0] > maxLat || pt[1] < minLng || pt[1] > maxLng) continue;
           const road = roadsRef.current.get(id);
@@ -177,76 +223,160 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       };
       processPointRef.current = processPoint;
 
+      // Punased teed renderdatakse mitmikpolüjoonide rüpkgudes – ~300 teed ühes
+      // lõuendi-kihis, et tuhanded teed ei maksaks tuhandeid renderdusobjekte
+      const pendingChunk: [number, number][][] = [];
+      const flushChunk = () => {
+        if (!pendingChunk.length) return;
+        const poly = L.polyline(pendingChunk.slice(), {
+          color: ROAD_COLOR,
+          weight: roadWeightRef.current,
+          opacity: 0.85,
+          lineCap: "round",
+          lineJoin: "round",
+          renderer: lineRenderer,
+          interactive: false,
+        }).addTo(roadsLayer);
+        roadChunkPolysRef.current.push(poly);
+        pendingChunk.length = 0;
+      };
+
       const addRoads = (roads: Road[]) => {
         for (const road of roads) {
           if (roadsRef.current.has(road.id)) continue;
           roadsRef.current.set(road.id, road);
-          roadBoxRef.current.set(road.id, roadBBox(road.coords));
-          L.polyline(road.coords, {
-            color: ROAD_COLOR,
-            weight: 4,
-            opacity: 0.85,
-            lineCap: "round",
-            lineJoin: "round",
-          }).addTo(roadsLayer);
+          const box = roadBBox(road.coords);
+          roadBoxRef.current.set(road.id, box);
+          const y0 = Math.floor(box[0] / ROAD_INDEX_DEG);
+          const y1 = Math.floor(box[2] / ROAD_INDEX_DEG);
+          const x0 = Math.floor(box[1] / ROAD_INDEX_DEG);
+          const x1 = Math.floor(box[3] / ROAD_INDEX_DEG);
+          for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) {
+              const key = gridKey(y * ROAD_INDEX_DEG, x * ROAD_INDEX_DEG);
+              const ids = roadSpatialRef.current.get(key) ?? new Set<string>();
+              ids.add(road.id);
+              roadSpatialRef.current.set(key, ids);
+            }
+          }
+          pendingChunk.push(road.coords);
+          if (pendingChunk.length >= ROADS_PER_CHUNK) flushChunk();
         }
+        flushChunk();
         // Tee laaditi võib-olla pärast seda, kui kasutaja juba oli liikunud
         for (const pt of traveledRef.current.slice(-200)) processPoint(pt);
       };
 
-      const runFetch = async () => {
-        if (fetchingRef.current) {
-          rerunRef.current = true;
-          return;
-        }
-        fetchingRef.current = true;
-        const ctrl = new AbortController();
-        abortRef.current = ctrl;
-        let batch: Cell[] = [];
+      // Joonetihedus sõltub suumist – lähemal on jooned paksemad ja detailsemad
+      const applyRoadWidth = () => {
+        const z = map.getZoom();
+        const w = z >= 17 ? 6 : z >= 15 ? 5 : 4;
+        if (w === roadWeightRef.current) return;
+        roadWeightRef.current = w;
+        for (const poly of roadChunkPolysRef.current) poly.setStyle({ weight: w });
+      };
+      map.on("zoomend", applyRoadWidth);
+      map.on("zoomend", () => setZoomLevel(map.getZoom()));
+
+      /** Tööline: laadib ühe partii lahtrit ja jätkab järgmisega. */
+      const worker = async (batch: Cell[]) => {
+        const fetchMode: FetchMode = batch[0]!.key.startsWith(`${FINE_DEG}:`) ? "fine" : "coarse";
         try {
-          const m = mapRef.current;
-          if (m && m.getZoom() >= FETCH_MIN_ZOOM && roadsRef.current.size < MAX_ROADS) {
-            const b = m.getBounds().pad(0.15);
-            const cells = cellsForBounds({
-              south: b.getSouth(),
-              west: b.getWest(),
-              north: b.getNorth(),
-              east: b.getEast(),
-            });
-            const now = Date.now();
-            const missing = cells.filter((c) => isCellStale(cellStateRef.current.get(c.key), now));
-            const center = m.getCenter();
-            const dist2 = (c: Cell) => {
-              const cy = (c.bbox.south + c.bbox.north) / 2;
-              const cx = (c.bbox.west + c.bbox.east) / 2;
-              return (cy - center.lat) ** 2 + (cx - center.lng) ** 2;
-            };
-            missing.sort((a, z) => dist2(a) - dist2(z));
-            batch = missing.slice(0, MAX_BATCH_CELLS);
-            if (batch.length) {
-              const roads = await fetchRoadsForCells(batch, ctrl.signal);
-              for (const c of batch) cellStateRef.current.set(c.key, { ok: true, ts: Date.now() });
-              addRoads(roads);
-            }
-          }
+          const roads = await fetchRoadsForCells(batch, abortAllRef.current.signal, fetchMode);
+          for (const c of batch) cellStateRef.current.set(c.key, { ok: true, ts: Date.now() });
+          addRoads(roads);
         } catch {
-          if (!ctrl.signal.aborted) {
+          if (!abortAllRef.current.signal.aborted) {
             for (const c of batch) cellStateRef.current.set(c.key, { ok: false, ts: Date.now() });
+            // Peegel võib olla ajutiselt üle koormatud. Proovi ilma kasutaja
+            // kaardiliigutust ootamata uuesti, et kaart ei jääks tühjaks.
+            setTimeout(() => {
+              if (!abortAllRef.current.signal.aborted) refreshQueue();
+            }, 5_100);
           }
         } finally {
-          fetchingRef.current = false;
-          abortRef.current = null;
-          if (rerunRef.current && !ctrl.signal.aborted) {
-            rerunRef.current = false;
-            void runFetch();
-          }
+          workersRef.current -= 1;
+          pump();
         }
       };
+
+      /** Käivitab töölised, kuni järjekorras on partiisid (max 2 paralleelselt). */
+      const pump = () => {
+        while (workersRef.current < MAX_WORKERS && workQueueRef.current.length > 0) {
+          const batch: Cell[] = [];
+          const now = Date.now();
+          while (batch.length < MAX_BATCH_CELLS && workQueueRef.current.length > 0) {
+            const cell = workQueueRef.current.shift()!;
+            if (isCellStale(cellStateRef.current.get(cell.key), now)) batch.push(cell);
+          }
+          if (!batch.length) continue;
+          workersRef.current += 1;
+          void worker(batch);
+        }
+        if (workersRef.current === 0) setFetching(false);
+        else setFetching(true);
+      };
+
+      /** Ajakohastab järjekorra: vaate puuduvad lahtrid keskmest välja. */
+      const refreshQueue = () => {
+        const m = mapRef.current;
+        if (!m) return;
+        const mode = modeForZoom(m.getZoom());
+        if (!mode || roadsRef.current.size >= MAX_ROADS) return;
+        const b = m.getBounds().pad(VIEW_PAD);
+        const cells = cellsForBounds(
+          {
+            south: b.getSouth(),
+            west: b.getWest(),
+            north: b.getNorth(),
+            east: b.getEast(),
+          },
+          gridDeg(mode),
+        );
+        const now = Date.now();
+        const missing = cells.filter((c) => isCellStale(cellStateRef.current.get(c.key), now));
+        const center = m.getCenter();
+        const dist2 = (c: Cell) => {
+          const cy = (c.bbox.south + c.bbox.north) / 2;
+          const cx = (c.bbox.west + c.bbox.east) / 2;
+          return (cy - center.lat) ** 2 + (cx - center.lng) ** 2;
+        };
+        missing.sort((a, z) => dist2(a) - dist2(z));
+        const known = new Set(missing.map((c) => c.key));
+        workQueueRef.current = [
+          ...missing,
+          ...workQueueRef.current.filter((c) => !known.has(c.key)),
+        ];
+        pump();
+      };
+
+      /** Laadib teed ümber kasutaja asukoha (ka kui vaade on kusagil mujal). */
+      const corridorFetch = (pt: [number, number]) => {
+        const m = mapRef.current;
+        const mode = m ? modeForZoom(m.getZoom()) : "fine";
+        if (!mode) return;
+        const deg = gridDeg(mode);
+        const cells = cellsForBounds(
+          {
+            south: pt[0] - deg * 1.5,
+            west: pt[1] - deg * 3,
+            north: pt[0] + deg * 1.5,
+            east: pt[1] + deg * 3,
+          },
+          deg,
+        );
+        const now = Date.now();
+        const missing = cells.filter((c) => isCellStale(cellStateRef.current.get(c.key), now));
+        if (!missing.length) return;
+        workQueueRef.current = [...missing, ...workQueueRef.current];
+        pump();
+      };
+      corridorFetchRef.current = corridorFetch;
 
       let fetchTimer: ReturnType<typeof setTimeout> | null = null;
       const scheduleFetch = () => {
         if (fetchTimer) clearTimeout(fetchTimer);
-        fetchTimer = setTimeout(() => void runFetch(), 600);
+        fetchTimer = setTimeout(refreshQueue, 150);
         fetchTimerRef.current = fetchTimer;
       };
       map.on("moveend", scheduleFetch);
@@ -266,22 +396,32 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       ro.observe(containerRef.current);
       roRef.current = ro;
       setTimeout(() => map.invalidateSize(), 300);
+
+      // Kaart valmis – sunni punktide/jälgede kihid uuesti renderdama
+      setMapReady((n) => n + 1);
     })();
     return () => {
       cancelled = true;
       processPointRef.current = () => {};
-      abortRef.current?.abort();
+      corridorFetchRef.current = () => {};
+      abortAllRef.current.abort();
+      abortAllRef.current = new AbortController();
       if (fetchTimerRef.current) {
         clearTimeout(fetchTimerRef.current);
         fetchTimerRef.current = null;
       }
+      workQueueRef.current = [];
+      workersRef.current = 0;
+      roadChunkPolysRef.current = [];
       roRef.current?.disconnect();
       roRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
+      lineRendererRef.current = null;
       layersRef.current = {};
       roadStore.clear();
       roadBoxStore.clear();
+      roadSpatialStore.clear();
       greenRunStore.clear();
       cellStateStore.clear();
       firstFixDoneRef.current = false;
@@ -291,7 +431,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
   useEffect(() => {
     const L = leafletRef.current;
     const layer = layersRef.current.points;
-    if (!L || !layer) return;
+    const renderer = lineRendererRef.current;
+    if (!L || !layer || !renderer) return;
     layer.clearLayers();
     for (const p of points) {
       const green = p.mine || p.visited;
@@ -301,17 +442,19 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         weight: 3,
         fillColor: green ? "#2f9e7f" : "#d9453c",
         fillOpacity: 0.95,
+        renderer,
       });
       marker.bindTooltip(escapeHtml(p.title), { direction: "top" });
       marker.on("click", () => selectRef.current(p.id));
       marker.addTo(layer);
     }
-  }, [points]);
+  }, [points, mapReady]);
 
   useEffect(() => {
     const L = leafletRef.current;
     const layer = layersRef.current.tracks;
-    if (!L || !layer) return;
+    const renderer = lineRendererRef.current;
+    if (!L || !layer || !renderer) return;
     layer.clearLayers();
     for (const t of tracks) {
       if (t.length < 2) continue;
@@ -321,6 +464,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         opacity: 0.22,
         lineCap: "round",
         lineJoin: "round",
+        renderer,
       }).addTo(layer);
       L.polyline(t, {
         color: "#4361ee",
@@ -328,24 +472,39 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         opacity: 0.9,
         lineCap: "round",
         lineJoin: "round",
+        renderer,
       }).addTo(layer);
     }
-  }, [tracks]);
+  }, [tracks, mapReady]);
 
   useEffect(() => {
     const L = leafletRef.current;
     const layer = layersRef.current.me;
-    if (!L || !layer) return;
+    const renderer = lineRendererRef.current;
+    if (!L || !layer || !renderer) return;
     layer.clearLayers();
     if (!me) return;
+    if (me.accuracy && me.accuracy > 1) {
+      L.circle([me.lat, me.lng], {
+        radius: me.accuracy,
+        color: "#2f6fd0",
+        weight: 1,
+        opacity: 0.35,
+        fillColor: "#2f6fd0",
+        fillOpacity: 0.08,
+        interactive: false,
+        renderer,
+      }).addTo(layer);
+    }
     L.circleMarker([me.lat, me.lng], {
       radius: 7,
       color: "#ffffff",
       weight: 3,
       fillColor: "#2f6fd0",
       fillOpacity: 1,
+      renderer,
     }).addTo(layer);
-  }, [me]);
+  }, [me, mapReady]);
 
   // Asukoha uuendused: tee lähedal liigumine värvib teelõigud roheliseks
   useEffect(() => {
@@ -357,6 +516,15 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       if (!interactedRef.current) {
         map.setView(pt, Math.max(map.getZoom(), 15));
       }
+    }
+    // Laadi teed ümber kasutaja asukoha, isegi kui vaade on mujal või äpp taustal
+    const lastCorr = corridorRef.current;
+    if (
+      !lastCorr ||
+      distanceMeters({ lat: lastCorr[0], lng: lastCorr[1] }, me) > CORRIDOR_TRIGGER_METERS
+    ) {
+      corridorRef.current = pt;
+      corridorFetchRef.current(pt);
     }
     const traveled = traveledRef.current;
     if (traveled.length > 3000) traveled.splice(0, traveled.length - 3000);
@@ -370,8 +538,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         processPointRef.current(pt);
         return;
       }
-      // suur hüpe: interpoleeri sirgjoonel, et vahepealsed teed saaksid roheliseks
-      const steps = Math.min(Math.ceil(d / 20), 40);
+      // suur hüpe: interpoleeri sirgjoonel tihedalt, et 2 m raadius tabaks kõik teed
+      const steps = Math.min(Math.ceil(d / 8), 80);
       for (let i = 1; i <= steps; i++) {
         const f = i / steps;
         const s: [number, number] = [
@@ -396,6 +564,15 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+      {(fetching || zoomLevel < 11) && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-[600] -translate-x-1/2 rounded-full bg-card/95 px-3 py-1.5 text-xs font-medium text-foreground shadow backdrop-blur">
+          {fetching
+            ? "Laadin teid…"
+            : zoomLevel < 13 && zoomLevel >= 11
+              ? "Suumi lähemale, et ka väiksemad teed ilmuksid"
+              : "Suumi lähemale, et teed ilmuksid"}
+        </div>
+      )}
       <button
         type="button"
         onClick={locateMe}

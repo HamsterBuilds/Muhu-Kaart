@@ -73,8 +73,11 @@ function MuhuApp() {
 
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
-  const { tracking, liveTrack, start, stop } = useTracking(code, pos);
+  const { tracking, liveTrack, trackingPos, start, stop } = useTracking(code);
   const { add, remove, setVisited, update } = usePointActions(code, groupId);
+
+  // Jälgimise ajal uueneb asukoht ka taustal (BackgroundGeolocation)
+  const me = trackingPos ?? pos;
 
   const points = pointsQuery.data ?? [];
   const visitedCount = points.filter((p) => p.visited || p.mine).length;
@@ -104,7 +107,7 @@ function MuhuApp() {
   }
 
   const submitPoint = () => {
-    if (!pos) {
+    if (!me) {
       toast.error("Asukoht pole veel teada");
       return;
     }
@@ -112,7 +115,7 @@ function MuhuApp() {
       toast.error("Vali esmalt grupp");
       return;
     }
-    add.mutate({ title, lat: pos.lat, lng: pos.lng });
+    add.mutate({ title, lat: me.lat, lng: me.lng });
     setTitle("");
     setAdding(false);
   };
@@ -120,7 +123,7 @@ function MuhuApp() {
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-background">
       <Suspense fallback={<div className="h-full w-full bg-secondary" />}>
-        <MuhuMap points={points} tracks={tracks} me={pos} onSelect={setSelected} />
+        <MuhuMap points={points} tracks={tracks} me={me} onSelect={setSelected} />
       </Suspense>
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-[800] p-3">
@@ -168,7 +171,7 @@ function MuhuApp() {
           <p className="pointer-events-auto mt-2 rounded-xl bg-card/95 px-3 py-2 text-xs text-muted-foreground shadow-sm">
             {geoError
               ? `Asukohta ei saa: ${geoError}`
-              : pos
+              : me
                 ? "Sa oled Muhu saarest väljas – kaart ja jälgimine töötavad ka siin."
                 : "Otsin sinu asukohta..."}
           </p>

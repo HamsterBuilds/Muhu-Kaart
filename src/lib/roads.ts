@@ -1,37 +1,48 @@
 export type Road = { id: string; coords: [number, number][] };
 export type BBox = { south: number; west: number; north: number; east: number };
 export type Cell = { key: string; bbox: BBox };
+/** fine = kõik teed tihedal võrgul (zoom ≥ 13); coarse = suured teed hõredal võrgul (zoom 11–12). */
+export type FetchMode = "fine" | "coarse";
 
-const CELL_DEG = 0.02;
-const FAIL_RETRY_MS = 30_000;
-const OVERPASS_TIMEOUT_MS = 25_000;
+export const FINE_DEG = 0.02;
+export const COARSE_DEG = 0.08;
+const FAIL_RETRY_MS = 5_000;
+const OVERPASS_TIMEOUT_MS = 20_000;
 
-const MIRRORS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter",
-];
+const MAJOR_FILTER =
+  '["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]';
+
+export function gridDeg(mode: FetchMode): number {
+  return mode === "fine" ? FINE_DEG : COARSE_DEG;
+}
+
+export function modeForZoom(zoom: number): FetchMode | null {
+  if (zoom >= 13) return "fine";
+  if (zoom >= 11) return "coarse";
+  return null;
+}
 
 export function bboxForCellKey(key: string): BBox {
-  const [y, x] = key.split(":");
+  const [degStr, y, x] = key.split(":");
+  const deg = Number(degStr);
   const cy = Number(y);
   const cx = Number(x);
   return {
-    south: cy * CELL_DEG,
-    west: cx * CELL_DEG,
-    north: (cy + 1) * CELL_DEG,
-    east: (cx + 1) * CELL_DEG,
+    south: cy * deg,
+    west: cx * deg,
+    north: (cy + 1) * deg,
+    east: (cx + 1) * deg,
   };
 }
 
-export function cellsForBounds(view: BBox): Cell[] {
+export function cellsForBounds(view: BBox, deg: number): Cell[] {
   const keys = new Set<string>();
-  const y0 = Math.floor(view.south / CELL_DEG);
-  const y1 = Math.floor(view.north / CELL_DEG);
-  const x0 = Math.floor(view.west / CELL_DEG);
-  const x1 = Math.floor(view.east / CELL_DEG);
+  const y0 = Math.floor(view.south / deg);
+  const y1 = Math.floor(view.north / deg);
+  const x0 = Math.floor(view.west / deg);
+  const x1 = Math.floor(view.east / deg);
   for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) keys.add(`${y}:${x}`);
+    for (let x = x0; x <= x1; x++) keys.add(`${deg}:${y}:${x}`);
   }
   return [...keys].map((key) => ({ key, bbox: bboxForCellKey(key) }));
 }
@@ -40,42 +51,44 @@ export type CellFetchState = { ok: boolean; ts: number };
 export const isCellStale = (rec: CellFetchState | undefined, now: number): boolean =>
   !rec || (!rec.ok && now - rec.ts > FAIL_RETRY_MS);
 
-export async function fetchRoadsForCells(cells: Cell[], signal?: AbortSignal): Promise<Road[]> {
+async function fetchThroughRoadProxy(query: string, signal: AbortSignal | undefined): Promise<Road[]> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS);
+  const abort = () => ctrl.abort();
+  signal?.addEventListener("abort", abort);
+  try {
+    const res = await fetch("/api/roads", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ data: query }).toString(),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+    const json: unknown = await res.json();
+    return parseOverpass(json);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
+/** Pärib teed sama päritolu serveripuhvri kaudu, et CORS ei jätaks kaarti tühjaks. */
+export async function fetchRoadsForCells(
+  cells: Cell[],
+  signal?: AbortSignal,
+  mode: FetchMode = "fine",
+): Promise<Road[]> {
   if (!cells.length) return [];
+  const filter = mode === "coarse" ? MAJOR_FILTER : '["highway"]';
   const parts = cells
     .map(
       (c) =>
-        `way["highway"](${c.bbox.south.toFixed(5)},${c.bbox.west.toFixed(5)},${c.bbox.north.toFixed(5)},${c.bbox.east.toFixed(5)});`,
+        `way${filter}(${c.bbox.south.toFixed(5)},${c.bbox.west.toFixed(5)},${c.bbox.north.toFixed(5)},${c.bbox.east.toFixed(5)});`,
     )
     .join("");
-  const data = `[out:json][timeout:30];(${parts});out geom 6000;`;
-  let lastError: unknown = null;
-  for (const url of MIRRORS) {
-    for (const method of ["post", "get"] as const) {
-      try {
-        const init: RequestInit =
-          method === "post"
-            ? {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: new URLSearchParams({ data }).toString(),
-              }
-            : { method: "GET" };
-        if (signal) init.signal = signal;
-        const res = await fetch(
-          method === "post" ? url : `${url}?data=${encodeURIComponent(data)}`,
-          init,
-        );
-        if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-        const json: unknown = await res.json();
-        return parseOverpass(json);
-      } catch (e) {
-        if (signal?.aborted) throw e;
-        lastError = e;
-      }
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Overpass ei ole saadaval");
+  const limit = mode === "coarse" ? 4_000 : 6_000;
+  const query = `[out:json][timeout:30];(${parts});out geom ${limit};`;
+  return fetchThroughRoadProxy(query, signal);
 }
 
 function parseOverpass(json: unknown): Road[] {

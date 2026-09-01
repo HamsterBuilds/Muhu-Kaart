@@ -13,6 +13,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor-firebase/authentication": "^8.4.0",
     "@capacitor/core": "^8.5.0",
     "@capacitor/geolocation": "^8.2.1",
