@@ -6,6 +6,8 @@ import type {
   Canvas as LeafletCanvas,
 } from "leaflet";
 import { Crosshair } from "lucide-react";
+import { VectorTile } from "@mapbox/vector-tile";
+import { PbfReader } from "pbf";
 import "leaflet/dist/leaflet.css";
 import { MUHU_CENTER, MUHU_OUTLINE, distanceMeters } from "@/lib/muhu";
 import {
@@ -46,12 +48,13 @@ const TRAVELED_COLOR = "#2f9e7f";
 /** Kui lähedal peab tee olema, et lõik läbituks märkida (meetrites). */
 const ROAD_HIT_METERS = 2;
 const MAX_BATCH_CELLS = 12;
-const MAX_WORKERS = 2;
+const MAX_WORKERS = 1;
 const VIEW_PAD = 0.5;
 const ROADS_PER_CHUNK = 300;
 const MAX_ROADS = 40000;
 const CORRIDOR_TRIGGER_METERS = 120;
 const ROAD_INDEX_DEG = 0.01;
+const VECTOR_ROAD_TILES = "https://vector.openstreetmap.org/shortbread_v1/{z}/{x}/{y}.mvt";
 
 type Props = {
   points: MapPoint[];
@@ -88,7 +91,6 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
   const lineRendererRef = useRef<LeafletCanvas | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const [mapReady, setMapReady] = useState(0);
-  const [fetching, setFetching] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(13);
 
   const roadsRef = useRef(new Map<string, Road>());
@@ -115,6 +117,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    let sizeTimer: ReturnType<typeof setTimeout> | null = null;
     const roadStore = roadsRef.current;
     const roadBoxStore = roadBoxRef.current;
     const roadSpatialStore = roadSpatialRef.current;
@@ -142,6 +145,67 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
         maxZoom: 19,
+      }).addTo(map);
+
+      // Punased teed tulevad OSM-i vektorplaatidest, mitte ebakindlast suurest
+      // Overpassi päringust. Plaadid laaditakse automaatselt igal liigutamisel.
+      const RedRoadTiles = L.GridLayer.extend({
+        createTile(coords: { x: number; y: number; z: number }, done: (error?: Error | null, tile?: HTMLCanvasElement) => void) {
+          const canvas = document.createElement("canvas");
+          const size = 256;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            done(new Error("Lõuendi loomine ebaõnnestus"), canvas);
+            return canvas;
+          }
+          const url = VECTOR_ROAD_TILES
+            .replace("{z}", String(coords.z))
+            .replace("{x}", String(coords.x))
+            .replace("{y}", String(coords.y));
+          void fetch(url)
+            .then((res) => {
+              if (!res.ok) throw new Error(`Road tile HTTP ${res.status}`);
+              return res.arrayBuffer();
+            })
+            .then((data) => {
+              const tile = new VectorTile(new PbfReader(new Uint8Array(data)));
+              const streets = tile.layers.streets;
+              if (streets) {
+                ctx.strokeStyle = ROAD_COLOR;
+                ctx.globalAlpha = 0.88;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+                for (let i = 0; i < streets.length; i++) {
+                  const feature = streets.feature(i);
+                  if (feature.type !== 2) continue;
+                  const kind = String(feature.properties.kind ?? "");
+                  ctx.lineWidth = /motorway|trunk|primary/.test(kind) ? 3.5 : /secondary|tertiary/.test(kind) ? 2.6 : 1.8;
+                  const scale = size / streets.extent;
+                  for (const line of feature.loadGeometry()) {
+                    if (!line.length) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(line[0]!.x * scale, line[0]!.y * scale);
+                    for (let j = 1; j < line.length; j++) ctx.lineTo(line[j]!.x * scale, line[j]!.y * scale);
+                    ctx.stroke();
+                  }
+                }
+              }
+              done(null, canvas);
+            })
+            .catch((error: unknown) => done(error instanceof Error ? error : new Error("Teede plaat ebaõnnestus"), canvas));
+          return canvas;
+        },
+      });
+      new RedRoadTiles({
+        tileSize: 256,
+        minZoom: 11,
+        maxNativeZoom: 14,
+        maxZoom: 19,
+        opacity: 0.92,
+        updateWhenIdle: false,
+        keepBuffer: 2,
       }).addTo(map);
 
       const roadsLayer = L.layerGroup().addTo(map);
@@ -313,8 +377,6 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
           workersRef.current += 1;
           void worker(batch);
         }
-        if (workersRef.current === 0) setFetching(false);
-        else setFetching(true);
       };
 
       /** Ajakohastab järjekorra: vaate puuduvad lahtrid keskmest välja. */
@@ -392,10 +454,14 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       }
 
       // Leaflet mõõdab konteineri kohe – hoia suurus paigas ka pärast layouti muutust
-      const ro = new ResizeObserver(() => map.invalidateSize());
+      const ro = new ResizeObserver(() => {
+        if (mapRef.current === map) map.invalidateSize();
+      });
       ro.observe(containerRef.current);
       roRef.current = ro;
-      setTimeout(() => map.invalidateSize(), 300);
+      sizeTimer = setTimeout(() => {
+        if (mapRef.current === map) map.invalidateSize();
+      }, 300);
 
       // Kaart valmis – sunni punktide/jälgede kihid uuesti renderdama
       setMapReady((n) => n + 1);
@@ -415,6 +481,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       roadChunkPolysRef.current = [];
       roRef.current?.disconnect();
       roRef.current = null;
+      if (sizeTimer) clearTimeout(sizeTimer);
       mapRef.current?.remove();
       mapRef.current = null;
       lineRendererRef.current = null;
@@ -564,13 +631,9 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
-      {(fetching || zoomLevel < 11) && (
+      {zoomLevel < 11 && (
         <div className="pointer-events-none absolute left-1/2 top-3 z-[600] -translate-x-1/2 rounded-full bg-card/95 px-3 py-1.5 text-xs font-medium text-foreground shadow backdrop-blur">
-          {fetching
-            ? "Laadin teid…"
-            : zoomLevel < 13 && zoomLevel >= 11
-              ? "Suumi lähemale, et ka väiksemad teed ilmuksid"
-              : "Suumi lähemale, et teed ilmuksid"}
+          Suumi lähemale, et teed ilmuksid
         </div>
       )}
       <button

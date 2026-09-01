@@ -26,28 +26,32 @@ async function proxyRoads(request: Request): Promise<Response> {
   if (body.length > 75_000 || !query?.includes('way["highway"')) {
     return new Response("Invalid road query", { status: 400 });
   }
-  const attempts = ROAD_MIRRORS.map(async (url) => {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body,
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!response.ok) throw new Error(`Overpass HTTP ${response.status}`);
-    return response;
-  });
-  try {
-    const response = await Promise.any(attempts);
-    return new Response(response.body, {
-      status: 200,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "public, max-age=60",
-      },
-    });
-  } catch {
-    return new Response("Road service unavailable", { status: 503 });
+  // Avalikud Overpassi instantsid piiravad paralleelseid rakendusepäringuid.
+  // Proovi peegleid ükshaaval ja identifitseeri rakendus, et vältida 429/406 vastuseid.
+  for (const url of ROAD_MIRRORS) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "user-agent": "MuhuTrailMagic/1.0 (road overlay)",
+        },
+        body,
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) continue;
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=60",
+        },
+      });
+    } catch {
+      // jätka järgmise peegliga
+    }
   }
+  return new Response("Road service unavailable", { status: 503 });
 }
 
 async function getServerEntry(): Promise<ServerEntry> {
