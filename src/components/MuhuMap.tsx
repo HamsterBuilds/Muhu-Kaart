@@ -111,6 +111,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
   const corridorRef = useRef<[number, number] | null>(null);
   const corridorFetchRef = useRef<(pt: [number, number]) => void>(() => {});
   const processPointRef = useRef<(pt: [number, number]) => void>(() => {});
+  const vectorRoadSinkRef = useRef<(roads: Road[]) => void>(() => {});
 
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
@@ -174,23 +175,49 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
               const streets = tile.layers.streets;
               if (streets) {
                 ctx.strokeStyle = ROAD_COLOR;
-                ctx.globalAlpha = 0.88;
+                ctx.globalAlpha = 0.62;
                 ctx.lineCap = "round";
                 ctx.lineJoin = "round";
+                const zoomScale = 2 ** Math.max(0, map.getZoom() - coords.z);
+                const tileCenter = map.unproject(L.point((coords.x + 0.5) * size, (coords.y + 0.5) * size), coords.z);
+                const currentFix = lastFixRef.current;
+                // Rohelise 2 m tabamise indeksisse lisame ainult kasutaja lähiala
+                // plaadid, mitte kogu vaate teedevõrku.
+                const indexForTracking = !!currentFix && distanceMeters(
+                  { lat: currentFix[0], lng: currentFix[1] },
+                  { lat: tileCenter.lat, lng: tileCenter.lng },
+                ) < 2_500;
+                const nearbyRoads: Road[] = [];
                 for (let i = 0; i < streets.length; i++) {
                   const feature = streets.feature(i);
                   if (feature.type !== 2) continue;
                   const kind = String(feature.properties.kind ?? "");
-                  ctx.lineWidth = /motorway|trunk|primary/.test(kind) ? 3.5 : /secondary|tertiary/.test(kind) ? 2.6 : 1.8;
+                  if (/footway|path|cycleway|steps|pedestrian/.test(kind)) continue;
+                  ctx.lineWidth = (/motorway|trunk|primary/.test(kind) ? 1.5 : /secondary|tertiary/.test(kind) ? 1.1 : 0.7) / zoomScale;
                   const scale = size / streets.extent;
-                  for (const line of feature.loadGeometry()) {
+                  const geometry = feature.loadGeometry();
+                  for (let lineIndex = 0; lineIndex < geometry.length; lineIndex++) {
+                    const line = geometry[lineIndex]!;
                     if (!line.length) continue;
                     ctx.beginPath();
                     ctx.moveTo(line[0]!.x * scale, line[0]!.y * scale);
                     for (let j = 1; j < line.length; j++) ctx.lineTo(line[j]!.x * scale, line[j]!.y * scale);
                     ctx.stroke();
+                    if (indexForTracking) {
+                      const roadCoords = line.map((point) => {
+                        const latLng = map.unproject(
+                          L.point(coords.x * size + point.x * scale, coords.y * size + point.y * scale),
+                          coords.z,
+                        );
+                        return [latLng.lat, latLng.lng] as [number, number];
+                      });
+                      if (roadCoords.length >= 2) {
+                        nearbyRoads.push({ id: `vt:${coords.z}:${coords.x}:${coords.y}:${feature.id}:${lineIndex}`, coords: roadCoords });
+                      }
+                    }
                   }
                 }
+                if (nearbyRoads.length) vectorRoadSinkRef.current(nearbyRoads);
               }
               done(null, canvas);
             })
@@ -205,7 +232,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         maxZoom: 19,
         opacity: 0.92,
         updateWhenIdle: false,
-        keepBuffer: 2,
+        keepBuffer: 0,
+        updateWhenZooming: false,
       }).addTo(map);
 
       const roadsLayer = L.layerGroup().addTo(map);
@@ -305,7 +333,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         pendingChunk.length = 0;
       };
 
-      const addRoads = (roads: Road[]) => {
+      const addRoads = (roads: Road[], renderRed = true) => {
         for (const road of roads) {
           if (roadsRef.current.has(road.id)) continue;
           roadsRef.current.set(road.id, road);
@@ -323,13 +351,16 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
               roadSpatialRef.current.set(key, ids);
             }
           }
-          pendingChunk.push(road.coords);
-          if (pendingChunk.length >= ROADS_PER_CHUNK) flushChunk();
+          if (renderRed) {
+            pendingChunk.push(road.coords);
+            if (pendingChunk.length >= ROADS_PER_CHUNK) flushChunk();
+          }
         }
         flushChunk();
         // Tee laaditi võib-olla pärast seda, kui kasutaja juba oli liikunud
         for (const pt of traveledRef.current.slice(-200)) processPoint(pt);
       };
+      vectorRoadSinkRef.current = (roads) => addRoads(roads, false);
 
       // Joonetihedus sõltub suumist – lähemal on jooned paksemad ja detailsemad
       const applyRoadWidth = () => {
@@ -470,6 +501,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       cancelled = true;
       processPointRef.current = () => {};
       corridorFetchRef.current = () => {};
+      vectorRoadSinkRef.current = () => {};
       abortAllRef.current.abort();
       abortAllRef.current = new AbortController();
       if (fetchTimerRef.current) {
