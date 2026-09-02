@@ -61,7 +61,17 @@ jobs:
             echo '${{ secrets.GOOGLE_SERVICES_JSON_B64 }}' | base64 --decode > android/app/google-services.json
           fi
       - run: npx cap sync android
+      - name: Force the Firebase-registered signing certificate
+        run: node scripts/configure-android-signing.mjs
       - run: chmod +x android/gradlew && cd android && ./gradlew assembleDebug
+      - name: Verify APK signing certificate before release
+        shell: bash
+        run: |
+          EXPECTED_SHA1=$(keytool -list -v -keystore android-debug.keystore -alias androiddebugkey -storepass android -keypass android | sed -n 's/.*SHA1: //p' | tr -d ':\r' | tr '[:upper:]' '[:lower:]')
+          APK_SHA1=$(keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/.*SHA1: //p' | tr -d ':\r' | tr '[:upper:]' '[:lower:]')
+          echo "Expected SHA-1: $EXPECTED_SHA1"
+          echo "APK SHA-1:      $APK_SHA1"
+          test -n "$EXPECTED_SHA1" && test "$APK_SHA1" = "$EXPECTED_SHA1"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-${{ github.run_number }}
