@@ -68,7 +68,8 @@ jobs:
         shell: bash
         run: |
           EXPECTED_SHA1=$(keytool -list -v -keystore android-debug.keystore -alias androiddebugkey -storepass android -keypass android | sed -n 's/.*SHA1: //p' | tr -d ':\r' | tr '[:upper:]' '[:lower:]')
-          APK_SHA1=$(keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/.*SHA1: //p' | tr -d ':\r' | tr '[:upper:]' '[:lower:]')
+          APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          APK_SHA1=$("$APKSIGNER" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/.*SHA-1 digest: //p' | tr -d ':\r' | tr '[:upper:]' '[:lower:]')
           echo "Expected SHA-1: $EXPECTED_SHA1"
           echo "APK SHA-1:      $APK_SHA1"
           test -n "$EXPECTED_SHA1" && test "$APK_SHA1" = "$EXPECTED_SHA1"
