@@ -81,6 +81,12 @@ export function useTracking(code: string | null) {
   const [trackingPos, setTrackingPos] = useState<Position | null>(null);
   const buffer = useRef<{ lat: number; lng: number; t: string }[]>([]);
   const last = useRef<Position | null>(null);
+  const trackIdRef = useRef<string | null>(null);
+  const pendingKey = "muhu-track-pending-v1";
+  const savePending = useCallback(() => {
+    if (typeof window === "undefined" || !trackIdRef.current) return;
+    localStorage.setItem(pendingKey, JSON.stringify({ trackId: trackIdRef.current, points: buffer.current }));
+  }, []);
 
   const handleFix = useCallback((lat: number, lng: number, accuracy?: number) => {
     const fix = usableFix(lat, lng, accuracy);
@@ -89,8 +95,9 @@ export function useTracking(code: string | null) {
     if (last.current && distanceMeters(last.current, fix) < 2) return;
     last.current = fix;
     buffer.current.push({ ...fix, t: new Date().toISOString() });
+    savePending();
     setLiveTrack((p) => [...p, [lat, lng] as [number, number]]);
-  }, []);
+  }, [savePending]);
 
   // Asukohavaatleja: Androidil BackgroundGeolocation (töötab taustal), mujal Geolocation
   useEffect(() => {
@@ -159,8 +166,10 @@ export function useTracking(code: string | null) {
       buffer.current = [];
       try {
         await api.appendFirebaseTrackPoints(trackId, b);
+        localStorage.removeItem(pendingKey);
       } catch {
         buffer.current = [...b, ...buffer.current];
+        savePending();
       }
     };
     const timer = setInterval(flush, 15000);
@@ -173,11 +182,22 @@ export function useTracking(code: string | null) {
       document.removeEventListener("visibilitychange", onVisibility);
       void flush();
     };
-  }, [trackId]);
+  }, [trackId, savePending]);
 
   const start = useCallback(async () => {
     if (!code) return;
-    setTrackId(await api.startFirebaseTrack());
+    const nextTrackId = await api.startFirebaseTrack();
+    const saved = typeof window === "undefined" ? null : localStorage.getItem(pendingKey);
+    if (saved) {
+      try {
+        const pending = JSON.parse(saved) as { points?: { lat: number; lng: number; t: string }[] };
+        if (Array.isArray(pending.points)) buffer.current = pending.points;
+      } catch {
+        localStorage.removeItem(pendingKey);
+      }
+    }
+    trackIdRef.current = nextTrackId;
+    setTrackId(nextTrackId);
     last.current = null;
     setLiveTrack([]);
     toast.success(Capacitor.isNativePlatform() ? "Jälgimine käib – ka taustal" : "Jälgimine käib");
@@ -189,6 +209,8 @@ export function useTracking(code: string | null) {
     if (b.length) await api.appendFirebaseTrackPoints(trackId, b);
     await api.endFirebaseTrack(trackId);
     setTrackId(null);
+    trackIdRef.current = null;
+    if (typeof window !== "undefined") localStorage.removeItem(pendingKey);
     setLiveTrack([]);
     void qc.invalidateQueries({ queryKey: ["tracks"] });
     toast.success("Jälgimine lõpetatud");
