@@ -10,6 +10,7 @@ import { firebaseAuth } from "@/lib/firebase";
 import Welcome from "@/components/Welcome";
 import GroupSheet from "@/components/GroupSheet";
 import PointCard from "@/components/PointCard";
+import UpdateButton from "@/components/UpdateButton";
 import { clearCode, loadCode, loadGroup, saveCode, saveGroup } from "@/lib/session";
 import { useGeolocation, useMuhuData, usePointActions, useTracking } from "@/hooks/useMuhu";
 
@@ -93,6 +94,7 @@ function MuhuApp() {
   if (!code) {
     return (
       <>
+        <UpdateButton className="fixed right-4 top-4 z-[1000]" />
         <Welcome
           onReady={(user) => {
             saveCode(user.code);
@@ -143,6 +145,7 @@ function MuhuApp() {
           >
             Grupid
           </button>
+          <UpdateButton />
           <button
             onClick={() => {
               void signOut(firebaseAuth);
