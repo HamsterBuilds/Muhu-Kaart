@@ -30,7 +30,12 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
 
   const handleAuthenticated = async (user: User) => {
     try {
-      const groups = await listFirebaseGroups();
+      const groups = await Promise.race([
+        listFirebaseGroups(),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error("Gruppide laadimine võttis liiga kaua")), 10_000),
+        ),
+      ]);
       if (groups && groups.length > 0) {
         onReady(user);
         return;
@@ -64,7 +69,7 @@ export default function Welcome({ onReady }: { onReady: (user: User) => void }) 
           : await loginFirebaseUser(email, password);
       await handleAuthenticated({ ...user, code: user.id });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Midagi läks valesti");
+      toast.error(authErrorMessage(e));
     } finally {
       setBusy(false);
     }

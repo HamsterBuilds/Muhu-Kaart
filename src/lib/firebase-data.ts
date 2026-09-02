@@ -50,6 +50,25 @@ const uid = () =>
   })();
 const code = () => String(Math.floor(100000 + Math.random() * 900000));
 
+const AUTH_TIMEOUT_MS = 20_000;
+const DATA_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export async function registerFirebaseUser(name: string, email: string, password: string) {
   const credential = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
   await setDoc(doc(firestore, "users", credential.user.uid), {
@@ -60,8 +79,25 @@ export async function registerFirebaseUser(name: string, email: string, password
   return { id: credential.user.uid, name: name.trim(), email: email.trim() } satisfies FirebaseUser;
 }
 export async function loginFirebaseUser(email: string, password: string) {
-  const credential = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
-  const data = (await getDoc(doc(firestore, "users", credential.user.uid))).data();
+  const credential = await withTimeout(
+    signInWithEmailAndPassword(firebaseAuth, email.trim(), password),
+    AUTH_TIMEOUT_MS,
+    "Sisselogimine võttis liiga kaua. Kontrolli internetiühendust ja proovi uuesti.",
+  );
+  let data: Record<string, unknown> | undefined;
+  try {
+    data = (
+      await withTimeout(
+        getDoc(doc(firestore, "users", credential.user.uid)),
+        DATA_TIMEOUT_MS,
+        "Profiili laadimine võttis liiga kaua",
+      )
+    ).data();
+  } catch (error) {
+    // Authentication succeeded. A temporarily unavailable profile must not
+    // trap the user on the sign-in screen.
+    console.warn("Could not load user profile after email sign-in:", error);
+  }
   return {
     id: credential.user.uid,
     name: (data?.["name"] as string | undefined) ?? "Kasutaja",
@@ -92,15 +128,30 @@ export function authErrorMessage(e: unknown): string {
 
 async function ensureGoogleUser(authUser: FirebaseAuthUser): Promise<FirebaseUser> {
   const ref = doc(firestore, "users", authUser.uid);
-  const existing = await getDoc(ref);
-  if (!existing.exists()) {
-    await setDoc(ref, {
-      name: authUser.displayName ?? "Kasutaja",
-      email: authUser.email ?? "",
-      createdAt: serverTimestamp(),
-    });
+  let data: Record<string, unknown> | undefined;
+  try {
+    const existing = await withTimeout(
+      getDoc(ref),
+      DATA_TIMEOUT_MS,
+      "Profiili laadimine võttis liiga kaua",
+    );
+    data = existing.data();
+    if (!existing.exists()) {
+      await withTimeout(
+        setDoc(ref, {
+          name: authUser.displayName ?? "Kasutaja",
+          email: authUser.email ?? "",
+          createdAt: serverTimestamp(),
+        }),
+        DATA_TIMEOUT_MS,
+        "Profiili salvestamine võttis liiga kaua",
+      );
+    }
+  } catch (error) {
+    // Google authentication is already complete, so continue with the data
+    // supplied by Firebase Auth and let Firestore recover in the background.
+    console.warn("Could not sync Google user profile:", error);
   }
-  const data = existing.data();
   return {
     id: authUser.uid,
     name: (data?.["name"] as string | undefined) ?? authUser.displayName ?? "Kasutaja",
@@ -117,39 +168,34 @@ export async function completeGoogleRedirect(): Promise<FirebaseUser | null> {
 
 export async function loginWithGoogle(): Promise<FirebaseUser> {
   if (Capacitor.isNativePlatform()) {
-    let idToken: string | undefined;
-
-    // 1. Try modern Android Credential Manager first
     try {
-      const result = await FirebaseAuthentication.signInWithGoogle();
-      idToken = result.credential?.idToken;
-    } catch (err1) {
-      console.warn("Credential Manager failed, trying legacy Google Sign-In intent:", err1);
-    }
-
-    // 2. Try legacy Google Sign-In intent if idToken was not retrieved
-    if (!idToken) {
-      try {
-        const result = await FirebaseAuthentication.signInWithGoogle({
+      // The legacy account chooser is reliable across the Android versions
+      // supported by this app. Credential Manager can remain pending forever
+      // on devices where its Google provider is not configured.
+      const result = await withTimeout(
+        FirebaseAuthentication.signInWithGoogle({
           useCredentialManager: false,
-        });
-        idToken = result.credential?.idToken;
-      } catch (err2) {
-        console.warn("Legacy Google Sign-In intent failed:", err2);
-      }
-    }
-
-    // 3. If native token received, sign in to Firebase
-    if (idToken) {
-      const credential = await signInWithCredential(
-        firebaseAuth,
-        GoogleAuthProvider.credential(idToken),
+        }),
+        45_000,
+        "Google'i sisselogimine võttis liiga kaua. Proovi uuesti.",
+      );
+      const idToken = result.credential?.idToken;
+      if (!idToken) throw new Error("Google'i sisselogimise token puudub");
+      const credential = await withTimeout(
+        signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken)),
+        AUTH_TIMEOUT_MS,
+        "Google'i sisselogimine võttis liiga kaua. Kontrolli internetiühendust.",
       );
       return ensureGoogleUser(credential.user);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("10:") || message.includes("DEVELOPER_ERROR")) {
+        throw new Error(
+          "Google'i sisselogimise seadistus ei klapi selle Androidi versiooniga (viga 10).",
+        );
+      }
+      throw error;
     }
-
-    // 4. Fallback to Web Popup / Redirect
-    console.warn("Native Google auth failed, falling back to web popup...");
   }
 
   try {
