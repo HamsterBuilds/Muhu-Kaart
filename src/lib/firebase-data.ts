@@ -25,6 +25,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 
@@ -324,17 +325,25 @@ export async function startFirebaseTrack() {
 }
 export async function appendFirebaseTrackPoints(
   trackId: string,
-  points: { lat: number; lng: number; t: string }[],
+  points: { id: string; lat: number; lng: number; t: string }[],
 ) {
-  await Promise.all(
-    points.map((p) =>
-      addDoc(collection(firestore, "tracks", trackId, "points"), {
+  if (!points.length) return;
+  // One atomic, idempotent batch: retrying after a network interruption
+  // overwrites the same point IDs instead of creating duplicate track points.
+  // Firestore permits at most 500 writes per batch. Keep one write available
+  // for the parent update so even a long offline backlog can recover safely.
+  for (let offset = 0; offset < points.length; offset += 499) {
+    const batch = writeBatch(firestore);
+    for (const p of points.slice(offset, offset + 499)) {
+      batch.set(doc(firestore, "tracks", trackId, "points", p.id), {
         lat: p.lat,
         lng: p.lng,
         recordedAt: p.t,
-      }),
-    ),
-  );
+      });
+    }
+    batch.update(doc(firestore, "tracks", trackId), { updatedAt: serverTimestamp() });
+    await batch.commit();
+  }
 }
 export async function endFirebaseTrack(trackId: string) {
   await updateDoc(doc(firestore, "tracks", trackId), { endedAt: serverTimestamp() });
@@ -345,7 +354,6 @@ export async function listFirebaseTracks() {
       collection(firestore, "tracks"),
       where("userId", "==", uid()),
       orderBy("startedAt", "desc"),
-      limit(20),
     ),
   );
   return Promise.all(

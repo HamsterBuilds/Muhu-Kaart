@@ -5,6 +5,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { BackgroundGeolocationPlugin } from "@capacitor-community/background-geolocation";
 import { isOnMuhu, distanceMeters } from "@/lib/muhu";
 import * as api from "@/lib/firebase-data";
+import { firebaseAuth } from "@/lib/firebase";
 
 /** Tausta-asukohajälgimine (Android foreground service); veebil pole implementatsiooni. */
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>("BackgroundGeolocation");
@@ -65,6 +66,8 @@ export function useMuhuData(_code: string | null, groupId: string | null) {
     queryKey: ["tracks"],
     enabled: !!_code,
     queryFn: api.listFirebaseTracks,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   return { pointsQuery, tracksQuery };
 }
@@ -79,13 +82,21 @@ export function useTracking(code: string | null) {
   const [trackId, setTrackId] = useState<string | null>(null);
   const [liveTrack, setLiveTrack] = useState<[number, number][]>([]);
   const [trackingPos, setTrackingPos] = useState<Position | null>(null);
-  const buffer = useRef<{ lat: number; lng: number; t: string }[]>([]);
+  type BufferedPoint = { id: string; lat: number; lng: number; t: string };
+  const buffer = useRef<BufferedPoint[]>([]);
   const last = useRef<Position | null>(null);
   const trackIdRef = useRef<string | null>(null);
   const pendingKey = "muhu-track-pending-v1";
   const savePending = useCallback(() => {
     if (typeof window === "undefined" || !trackIdRef.current) return;
-    localStorage.setItem(pendingKey, JSON.stringify({ trackId: trackIdRef.current, points: buffer.current }));
+    localStorage.setItem(
+      pendingKey,
+      JSON.stringify({
+        userId: firebaseAuth.currentUser?.uid,
+        trackId: trackIdRef.current,
+        points: buffer.current,
+      }),
+    );
   }, []);
 
   const handleFix = useCallback((lat: number, lng: number, accuracy?: number) => {
@@ -94,7 +105,9 @@ export function useTracking(code: string | null) {
     setTrackingPos(fix);
     if (last.current && distanceMeters(last.current, fix) < 2) return;
     last.current = fix;
-    buffer.current.push({ ...fix, t: new Date().toISOString() });
+    const t = new Date().toISOString();
+    const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    buffer.current.push({ ...fix, id: `${Date.now()}-${random}`, t });
     savePending();
     setLiveTrack((p) => [...p, [lat, lng] as [number, number]]);
   }, [savePending]);
@@ -166,7 +179,10 @@ export function useTracking(code: string | null) {
       buffer.current = [];
       try {
         await api.appendFirebaseTrackPoints(trackId, b);
-        localStorage.removeItem(pendingKey);
+        // A new GPS fix may have arrived while this request was in flight.
+        // Never remove its local recovery copy together with the saved batch.
+        if (buffer.current.length) savePending();
+        else localStorage.removeItem(pendingKey);
       } catch {
         buffer.current = [...b, ...buffer.current];
         savePending();
@@ -186,16 +202,40 @@ export function useTracking(code: string | null) {
 
   const start = useCallback(async () => {
     if (!code) return;
-    const nextTrackId = await api.startFirebaseTrack();
     const saved = typeof window === "undefined" ? null : localStorage.getItem(pendingKey);
+    let recoveredTrackId: string | null = null;
     if (saved) {
       try {
-        const pending = JSON.parse(saved) as { points?: { lat: number; lng: number; t: string }[] };
-        if (Array.isArray(pending.points)) buffer.current = pending.points;
+        const pending = JSON.parse(saved) as {
+          userId?: string;
+          trackId?: string;
+          points?: Partial<BufferedPoint>[];
+        };
+        if (
+          pending.userId === firebaseAuth.currentUser?.uid &&
+          typeof pending.trackId === "string" &&
+          Array.isArray(pending.points)
+        ) {
+          recoveredTrackId = pending.trackId;
+          buffer.current = pending.points
+            .filter(
+              (p): p is Partial<BufferedPoint> & { lat: number; lng: number; t: string } =>
+                typeof p.lat === "number" && typeof p.lng === "number" && typeof p.t === "string",
+            )
+            .map((p, index) => ({
+              id: p.id ?? `recovered-${Date.parse(p.t) || Date.now()}-${index}`,
+              lat: p.lat,
+              lng: p.lng,
+              t: p.t,
+            }));
+        } else {
+          localStorage.removeItem(pendingKey);
+        }
       } catch {
         localStorage.removeItem(pendingKey);
       }
     }
+    const nextTrackId = recoveredTrackId ?? (await api.startFirebaseTrack());
     trackIdRef.current = nextTrackId;
     setTrackId(nextTrackId);
     last.current = null;
@@ -206,15 +246,22 @@ export function useTracking(code: string | null) {
     if (!trackId) return;
     const b = buffer.current;
     buffer.current = [];
-    if (b.length) await api.appendFirebaseTrackPoints(trackId, b);
-    await api.endFirebaseTrack(trackId);
+    try {
+      if (b.length) await api.appendFirebaseTrackPoints(trackId, b);
+      await api.endFirebaseTrack(trackId);
+    } catch (error) {
+      buffer.current = [...b, ...buffer.current];
+      savePending();
+      toast.error("Raja salvestamine ebaõnnestus – proovin uuesti");
+      return;
+    }
     setTrackId(null);
     trackIdRef.current = null;
     if (typeof window !== "undefined") localStorage.removeItem(pendingKey);
     setLiveTrack([]);
     void qc.invalidateQueries({ queryKey: ["tracks"] });
     toast.success("Jälgimine lõpetatud");
-  }, [trackId, qc]);
+  }, [trackId, qc, savePending]);
   return { tracking: !!trackId, liveTrack, trackingPos, start, stop };
 }
 export function usePointActions(_code: string | null, groupId: string | null) {

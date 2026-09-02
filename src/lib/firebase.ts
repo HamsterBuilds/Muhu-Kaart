@@ -1,6 +1,12 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
+  type Firestore,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -14,4 +20,21 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 export const firebaseAuth = getAuth(app);
 void setPersistence(firebaseAuth, browserLocalPersistence);
-export const firestore = getFirestore(app);
+
+// Keep acknowledged and queued Firestore data on disk. This lets the Android
+// app survive a restart or a temporary connection loss and sync back to the
+// same Firebase account when connectivity returns.
+let database: Firestore;
+if (typeof window !== "undefined") {
+  try {
+    database = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+    });
+  } catch {
+    // Hot reload or another module may already have initialized Firestore.
+    database = getFirestore(app);
+  }
+} else {
+  database = getFirestore(app);
+}
+export const firestore = database;

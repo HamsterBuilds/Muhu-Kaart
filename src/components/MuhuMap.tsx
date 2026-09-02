@@ -45,8 +45,8 @@ const SHOPS: { name: string; lat: number; lng: number }[] = [
 
 const ROAD_COLOR = "#d9453c";
 const TRAVELED_COLOR = "#2f9e7f";
-/** Kui lähedal peab tee olema, et lõik läbituks märkida (meetrites). */
-const ROAD_HIT_METERS = 2;
+/** GPS triivib telefonis tavaliselt mitu meetrit; 10 m tabab päris tee usaldusväärselt. */
+const ROAD_HIT_METERS = 10;
 const MAX_BATCH_CELLS = 12;
 const MAX_WORKERS = 1;
 const VIEW_PAD = 0.5;
@@ -99,6 +99,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
   const cellStateRef = useRef(new Map<string, CellFetchState>());
   const greenRunsRef = useRef(new Map<string, GreenRun[]>());
   const traveledRef = useRef<[number, number][]>([]);
+  const savedCoverageRef = useRef(new Map<string, [number, number]>());
+  const savedCoverageSpatialRef = useRef(new Map<string, [number, number][]>());
   const lastFixRef = useRef<[number, number] | null>(null);
   const firstFixDoneRef = useRef(false);
   const interactedRef = useRef(false);
@@ -368,6 +370,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       };
 
       const addRoads = (roads: Road[], renderRed = true) => {
+        const replayCells = new Set<string>();
         for (const road of roads) {
           if (roadsRef.current.has(road.id)) continue;
           roadsRef.current.set(road.id, road);
@@ -380,6 +383,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
           for (let y = y0; y <= y1; y++) {
             for (let x = x0; x <= x1; x++) {
               const key = gridKey(y * ROAD_INDEX_DEG, x * ROAD_INDEX_DEG);
+              replayCells.add(key);
               const ids = roadSpatialRef.current.get(key) ?? new Set<string>();
               ids.add(road.id);
               roadSpatialRef.current.set(key, ids);
@@ -396,7 +400,12 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         // kontrollime selle alati eraldi – see värvib kasutaja all oleva tee
         // roheliseks kohe pärast plaadi dekodeerimist.
         if (lastFixRef.current) processPoint(lastFixRef.current);
-        for (const pt of traveledRef.current.slice(-200)) processPoint(pt);
+        for (const pt of traveledRef.current.slice(-300)) processPoint(pt);
+        // Uute teede puhul töötle ainult samas ruudus olevat salvestatud
+        // katvust. Nii ei muutu aastatepikkuse ajaloo laadimine aeglaseks.
+        for (const key of replayCells) {
+          for (const pt of savedCoverageSpatialRef.current.get(key) ?? []) processPoint(pt);
+        }
       };
       vectorRoadSinkRef.current = (roads) => addRoads(roads, false);
       // Alles nüüd on nii nähtava punase kihi renderdaja kui 2 m rohelise
@@ -567,6 +576,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
       roadBoxStore.clear();
       roadSpatialStore.clear();
       greenRunStore.clear();
+      savedCoverageRef.current.clear();
+      savedCoverageSpatialRef.current.clear();
       cellStateStore.clear();
       firstFixDoneRef.current = false;
     };
@@ -619,6 +630,49 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
         renderer,
       }).addTo(layer);
     }
+  }, [tracks, mapReady]);
+
+  // Taasta kogu kasutaja läbitud teede katvus Firestore'ist. Punktid
+  // tihendatakse ~5 m ruudustikku, seega sama tee korduv läbimine ei kasvata
+  // töömahtu ega tekita kattuvaid rohelisi kihte.
+  useEffect(() => {
+    const coverage = savedCoverageRef.current;
+    const spatial = savedCoverageSpatialRef.current;
+    coverage.clear();
+    spatial.clear();
+    const addCoveragePoint = (pt: [number, number]) => {
+      const latCell = Math.round(pt[0] / 0.000045);
+      const lngCell = Math.round(pt[1] / 0.00008);
+      coverage.set(`${latCell}:${lngCell}`, pt);
+    };
+    for (const track of tracks) {
+      for (let index = 0; index < track.length; index++) {
+        const current = track[index]!;
+        const previous = index > 0 ? track[index - 1]! : null;
+        if (previous) {
+          const distance = distanceMeters(
+            { lat: previous[0], lng: previous[1] },
+            { lat: current[0], lng: current[1] },
+          );
+          const steps = Math.min(100, Math.ceil(distance / 5));
+          for (let step = 1; step < steps; step++) {
+            const f = step / steps;
+            addCoveragePoint([
+              previous[0] + (current[0] - previous[0]) * f,
+              previous[1] + (current[1] - previous[1]) * f,
+            ]);
+          }
+        }
+        addCoveragePoint(current);
+      }
+    }
+    for (const pt of coverage.values()) {
+      const key = `${Math.floor(pt[0] / ROAD_INDEX_DEG)}:${Math.floor(pt[1] / ROAD_INDEX_DEG)}`;
+      const list = spatial.get(key) ?? [];
+      list.push(pt);
+      spatial.set(key, list);
+    }
+    for (const pt of coverage.values()) processPointRef.current(pt);
   }, [tracks, mapReady]);
 
   useEffect(() => {
