@@ -24,6 +24,25 @@ test("APK obtains road geometry through native HTTP without a localhost server",
   assert.match(calls[0].data, /data=/);
 });
 
+test("native roads fail over after connection and HTTP failures", async () => {
+  const exports = {};
+  const calls = [];
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../src/lib/roads.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    exports, URLSearchParams, DOMException,
+    require: () => ({ Capacitor: { isNativePlatform: () => true }, CapacitorHttp: { post: async ({url}) => {
+      calls.push(url);
+      if (calls.length === 1) throw new Error("Connection failed");
+      if (calls.length === 2) return { status: 503 };
+      return { status: 200, data: { elements: [{type:"way", id:42, geometry:[{lat:59,lon:24},{lat:59.001,lon:24.001}]}] } };
+    } } }),
+  });
+  const roads = await exports.fetchRoadsForCells([{key:"test",bbox:{south:59,west:24,north:59.01,east:24.01}}]);
+  assert.equal(roads.length, 1);
+  assert.equal(new Set(calls).size, 3);
+});
+
 const source = ts.transpileModule(readFileSync(new URL("../src/hooks/useRoadCoverage.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;

@@ -53,20 +53,42 @@ export type CellFetchState = { ok: boolean; ts: number };
 export const isCellStale = (rec: CellFetchState | undefined, now: number): boolean =>
   !rec || (!rec.ok && now - rec.ts > FAIL_RETRY_MS);
 
-async function fetchThroughRoadProxy(query: string, signal: AbortSignal | undefined): Promise<Road[]> {
+async function fetchThroughRoadProxy(
+  query: string,
+  signal: AbortSignal | undefined,
+): Promise<Road[]> {
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
   // The packaged APK contains no web server implementing /api/roads.
   // Native HTTP reaches Overpass directly and does not depend on WebView CORS.
   if (Capacitor.isNativePlatform()) {
-    const response = await CapacitorHttp.post({
-      url: "https://overpass-api.de/api/interpreter",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      data: new URLSearchParams({ data: query }).toString(),
-      responseType: "json", connectTimeout: 15000, readTimeout: 35000,
-    });
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    if (response.status < 200 || response.status >= 300) throw new Error(`Overpass HTTP ${response.status}`);
-    return parseOverpass(typeof response.data === "string" ? JSON.parse(response.data) : response.data);
+    let lastError: unknown;
+    for (const url of [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://overpass.private.coffee/api/interpreter",
+    ]) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      try {
+        const response = await CapacitorHttp.post({
+          url,
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          data: new URLSearchParams({ data: query }).toString(),
+          responseType: "json",
+          connectTimeout: 15000,
+          readTimeout: 35000,
+        });
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        if (response.status < 200 || response.status >= 300)
+          throw new Error(`Overpass HTTP ${response.status}`);
+        return parseOverpass(
+          typeof response.data === "string" ? JSON.parse(response.data) : response.data,
+        );
+      } catch (error) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        lastError = error;
+      }
+    }
+    throw lastError;
   }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS);
