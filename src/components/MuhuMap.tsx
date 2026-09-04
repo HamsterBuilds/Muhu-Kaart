@@ -61,6 +61,7 @@ type Props = {
   tracks: [number, number][][];
   me: { lat: number; lng: number } | null;
   onSelect: (id: string) => void;
+  onCoverage: (pt: [number, number]) => void;
 };
 
 type GreenRun = {
@@ -77,7 +78,9 @@ function escapeHtml(value: string) {
   );
 }
 
-export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
+export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Props) {
+  const coverageCallback = useRef(onCoverage);
+  coverageCallback.current = onCoverage;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const layersRef = useRef<{
@@ -342,6 +345,7 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
           for (let i = 0; i < road.coords.length - 1; i++) {
             if (segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!) < ROAD_HIT_METERS) {
               markSegmentGreen(road, i);
+              coverageCallback.current(pt);
             }
           }
         }

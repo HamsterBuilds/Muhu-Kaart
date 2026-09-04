@@ -363,6 +363,7 @@ export async function listFirebaseTracks() {
       );
       return {
         id: t.id,
+        coverage: t.data().coverage === true,
         startedAt: t.data().startedAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         points: points.docs.map(
           (p) => [p.data().lat as number, p.data().lng as number] as [number, number],

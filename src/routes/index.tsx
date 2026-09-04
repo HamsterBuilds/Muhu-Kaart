@@ -11,6 +11,7 @@ import Welcome from "@/components/Welcome";
 import GroupSheet from "@/components/GroupSheet";
 import PointCard from "@/components/PointCard";
 import UpdateButton from "@/components/UpdateButton";
+import { useRoadCoverage } from "@/hooks/useRoadCoverage";
 import { clearCode, loadCode, loadGroup, saveCode, saveGroup } from "@/lib/session";
 import { useGeolocation, useMuhuData, usePointActions, useTracking } from "@/hooks/useMuhu";
 
@@ -75,6 +76,7 @@ function MuhuApp() {
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
   const { tracking, liveTrack, trackingPos, start, stop } = useTracking(code);
+  const { localCoverage, rememberCoverage, coverageOwner } = useRoadCoverage();
   const { add, remove, setVisited, update } = usePointActions(code, groupId);
 
   // Jälgimise ajal uueneb asukoht ka taustal (BackgroundGeolocation)
@@ -83,9 +85,10 @@ function MuhuApp() {
   const points = pointsQuery.data ?? [];
   const visitedCount = points.filter((p) => p.visited || p.mine).length;
   const tracks = useMemo(() => {
-    const saved = (tracksQuery.data ?? []).map((t) => t.points);
+    const saved = [...localCoverage, ...(tracksQuery.data ?? []).flatMap((t) =>
+      t.coverage ? t.points.map((p) => [p]) : [t.points])];
     return liveTrack.length > 1 ? [...saved, liveTrack] : saved;
-  }, [tracksQuery.data, liveTrack]);
+  }, [tracksQuery.data, liveTrack, localCoverage]);
 
   const selectedPoint = points.find((p) => p.id === selected) ?? null;
 
@@ -125,7 +128,7 @@ function MuhuApp() {
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-background">
       <Suspense fallback={<div className="h-full w-full bg-secondary" />}>
-        <MuhuMap points={points} tracks={tracks} me={me} onSelect={setSelected} />
+        <MuhuMap key={coverageOwner} points={points} tracks={tracks} me={me} onSelect={setSelected} onCoverage={rememberCoverage} />
       </Suspense>
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-[800] p-3">

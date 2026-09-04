@@ -63,7 +63,7 @@ export function useMuhuData(_code: string | null, groupId: string | null) {
     queryFn: () => api.listFirebasePoints(groupId!),
   });
   const tracksQuery = useQuery({
-    queryKey: ["tracks"],
+    queryKey: ["tracks", _code],
     enabled: !!_code,
     queryFn: api.listFirebaseTracks,
     refetchInterval: 30_000,

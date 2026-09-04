@@ -19,6 +19,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm install --no-audit --no-fund
+      - run: node --test scripts/road-coverage.test.mjs
       - run: npm run build
         env:
           VITE_APP_BUILD_NUMBER: ${{ github.run_number }}
