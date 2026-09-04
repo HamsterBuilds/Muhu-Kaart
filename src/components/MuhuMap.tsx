@@ -45,7 +45,7 @@ const SHOPS: { name: string; lat: number; lng: number }[] = [
 
 const ROAD_COLOR = "#d9453c";
 const TRAVELED_COLOR = "#2f9e7f";
-/** Only mark a road as visited when the GPS fix is within three metres. */
+/** The displayed road match remains precise; GPS accuracy can widen candidate lookup. */
 const ROAD_HIT_METERS = 3;
 const MAX_BATCH_CELLS = 12;
 const MAX_WORKERS = 1;
@@ -60,7 +60,7 @@ type CoverageSegment = { aLat: number; aLng: number; bLat: number; bLng: number 
 type Props = {
   points: MapPoint[];
   tracks: [number, number][][];
-  me: { lat: number; lng: number } | null;
+  me: { lat: number; lng: number; accuracy?: number } | null;
   onSelect: (id: string) => void;
   onCoverage: (pt: [number, number], segment: CoverageSegment) => void;
   savedSegments: CoverageSegment[];
@@ -109,6 +109,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roadChunkPolysRef = useRef<LeafletPolyline[]>([]);
   const roadWeightRef = useRef(6);
+  const roadHitMetersRef = useRef(ROAD_HIT_METERS);
   const corridorRef = useRef<[number, number] | null>(null);
   const corridorFetchRef = useRef<(pt: [number, number]) => void>(() => {});
   const processPointRef = useRef<(pt: [number, number]) => void>(() => {});
@@ -310,13 +311,14 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           // BBox on ainult kiire eelfilter. Laiendame seda 2 m võrra, sest
           // vastasel juhul jääks täpselt lubatud raadiuse serval olev tee
           // segmendikontrollini jõudmata.
-          const latPad = ROAD_HIT_METERS / 111_320;
-          const lngPad = ROAD_HIT_METERS / (111_320 * Math.max(0.1, Math.cos((pt[0] * Math.PI) / 180)));
+          const hitMeters = roadHitMetersRef.current;
+          const latPad = hitMeters / 111_320;
+          const lngPad = hitMeters / (111_320 * Math.max(0.1, Math.cos((pt[0] * Math.PI) / 180)));
           if (pt[0] < minLat - latPad || pt[0] > maxLat + latPad || pt[1] < minLng - lngPad || pt[1] > maxLng + lngPad) continue;
           const road = roadsRef.current.get(id);
           if (!road) continue;
           for (let i = 0; i < road.coords.length - 1; i++) {
-            if (segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!) < ROAD_HIT_METERS) {
+            if (segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!) < hitMeters) {
               const a = road.coords[i]!;
               const b = road.coords[i + 1]!;
               coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1] });
@@ -695,6 +697,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   // Asukoha uuendused: tee lähedal liigumine värvib teelõigud roheliseks
   useEffect(() => {
     if (!me) return;
+    // A phone may report a 7–10 m uncertainty even on a road. Snap the
+    // resulting green geometry to the exact road segment, but use the current
+    // reported uncertainty (capped) to decide which segment it belongs to.
+    roadHitMetersRef.current = Math.min(12, Math.max(ROAD_HIT_METERS, me.accuracy ?? ROAD_HIT_METERS));
     const pt: [number, number] = [me.lat, me.lng];
     const map = mapRef.current;
     if (map && !firstFixDoneRef.current) {
