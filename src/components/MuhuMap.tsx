@@ -180,6 +180,19 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             })
             .then((data) => {
               const tile = new VectorTile(new PbfReader(new Uint8Array(data)));
+              const land = tile.layers.land;
+              if (land) {
+                const woods: [number, number][][] = [];
+                for (let i = 0; i < land.length; i++) {
+                  const feature = land.feature(i);
+                  if (feature.type !== 3 || feature.properties.kind !== "forest") continue;
+                  for (const ring of feature.loadGeometry()) woods.push(ring.map(point => {
+                    const p = map.unproject(L.point(coords.x * size + point.x * size / land.extent, coords.y * size + point.y * size / land.extent), coords.z);
+                    return [p.lat, p.lng];
+                  }));
+                }
+                buildingDepth?.setWoodland(`${coords.z}:${coords.x}:${coords.y}`, woods);
+              }
               const buildings = tile.layers.buildings;
               if (buildings) {
                 const rings: [number, number][][] = [];
@@ -538,7 +551,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       // Sünkroniseeri juba saabunud asukohad pärast kaardi valmimist
       for (const pt of traveledRef.current) processPoint(pt);
       if (lastFixRef.current && !interactedRef.current) {
-        map.setView(lastFixRef.current, Math.max(map.getZoom(), 15));
+        map.setView(lastFixRef.current, Math.max(map.getZoom(), 17));
       }
 
       // Leaflet mõõdab konteineri kohe – hoia suurus paigas ka pärast layouti muutust
@@ -689,6 +702,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         }
         const largest = [...clusters.values()].sort((a, b) => b.length - a.length)[0]!;
         mapRef.current.fitBounds(largest, { padding: [40, 40], maxZoom: 18 });
+        mapRef.current.setZoom(Math.max(17, mapRef.current.getZoom()));
       }
       vectorRoadRefreshRef.current();
     }
@@ -735,7 +749,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     if (map && !firstFixDoneRef.current) {
       firstFixDoneRef.current = true;
       if (!interactedRef.current) {
-        map.setView(pt, Math.max(map.getZoom(), 15));
+        map.setView(pt, Math.max(map.getZoom(), 17));
       }
     }
     // Laadi teed ümber kasutaja asukoha, isegi kui vaade on mujal või äpp taustal
@@ -798,7 +812,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const locateMe = () => {
     const map = mapRef.current;
     const p = lastFixRef.current;
-    if (map && p) map.setView(p, Math.max(map.getZoom(), 15));
+    if (map && p) map.setView(p, Math.max(map.getZoom(), 17));
   };
 
   return (
