@@ -78,10 +78,24 @@ export function useMuhuData(_code: string | null, groupId: string | null) {
  * et kaart ja rohelised teed uuenevad ka siis, kui äpp pole aktiivselt ees.
  */
 export function useTracking(code: string | null, rememberCoverage: (point: [number, number]) => void) {
-  const [trackId, setTrackId] = useState<string | null>(null);
+  const activeTrackingKey = firebaseAuth.currentUser?.uid
+    ? `muhu-tracking-active-v1:${firebaseAuth.currentUser.uid}`
+    : null;
+  const [trackId, setTrackId] = useState<string | null>(() => {
+    if (!activeTrackingKey || typeof window === "undefined") return null;
+    return localStorage.getItem(activeTrackingKey) === "1" ? code : null;
+  });
   const [liveTrack, setLiveTrack] = useState<[number, number][]>([]);
   const [trackingPos, setTrackingPos] = useState<Position | null>(null);
   const last = useRef<Position | null>(null);
+
+  // Auth and the app shell can initialize in either order; resume a session
+  // once the signed-in code becomes available after a cold app launch.
+  useEffect(() => {
+    if (code && activeTrackingKey && localStorage.getItem(activeTrackingKey) === "1") {
+      setTrackId((current) => current ?? code);
+    }
+  }, [activeTrackingKey, code]);
 
   const handleFix = useCallback((lat: number, lng: number, accuracy?: number) => {
     const fix = usableFix(lat, lng, accuracy);
@@ -165,16 +179,18 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
       }
     } catch { /* Keep the legacy recovery copy untouched. */ }
     setTrackId(code);
+    if (activeTrackingKey) localStorage.setItem(activeTrackingKey, "1");
     last.current = null;
     setLiveTrack([]);
     toast.success(Capacitor.isNativePlatform() ? "Jälgimine käib – ka taustal" : "Jälgimine käib");
   }, [code, rememberCoverage]);
   const stop = useCallback(async () => {
     setTrackId(null);
+    if (activeTrackingKey) localStorage.removeItem(activeTrackingKey);
     setLiveTrack([]);
     // useRoadCoverage owns the durable retry queue even after tracking stops.
     toast.success("Jälgimine lõpetatud");
-  }, []);
+  }, [activeTrackingKey]);
   return { tracking: !!trackId, liveTrack, trackingPos, start, stop };
 }
 export function usePointActions(_code: string | null, groupId: string | null) {
