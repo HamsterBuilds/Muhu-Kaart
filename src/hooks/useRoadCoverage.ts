@@ -5,13 +5,13 @@ import { toast } from "sonner";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 import { appendFirebaseTrackPoints } from "@/lib/firebase-data";
 
-export type CoverageSegment = { aLat: number; aLng: number; bLat: number; bLng: number };
+export type CoverageSegment = { aLat: number; aLng: number; bLat: number; bLng: number; motorRoad?: boolean };
 type Point = { id: string; lat: number; lng: number; t: string; segment?: CoverageSegment };
 type Store = { points: Record<string, Point>; pending: Record<string, Point> };
 const key = (uid: string) => `muhu-road-coverage-v1:${uid}`;
 const pointId = (lat: number, lng: number) => `${Math.round(lat / 0.000045)}_${Math.round(lng / 0.00008)}`;
 const segmentId = (s: CoverageSegment) => `segment_${[`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_")}`;
-const validSegment = (s: CoverageSegment) => s && [s.aLat, s.aLng, s.bLat, s.bLng].every(Number.isFinite);
+const validSegment = (s: CoverageSegment | undefined): s is CoverageSegment => !!s && s.motorRoad === true && [s.aLat, s.aLng, s.bLat, s.bLng].every(Number.isFinite);
 
 /** The local copy is retained after acknowledgement; only the upload queue clears. */
 export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segments?: CoverageSegment[] }[]) {
@@ -52,19 +52,23 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segm
     // Separate samples must not be joined into artificial cross-island routes.
     setTracks(Object.values(data.points).map((p) => [[p.lat, p.lng]]));
     setSegments(Object.values(data.points).flatMap((p) => p.segment && validSegment(p.segment) ? [p.segment] : []));
-    setSyncStatus(`Kohalikult ${Object.keys(data.points).length} · ootel ${Object.keys(data.pending).length}`);
+    setSyncStatus(`Kohalikult ${Object.keys(data.points).length} kirjet (GPS + lõigud) · ootel ${Object.keys(data.pending).length}`);
   }), []);
 
   const remember = useCallback((pt: [number, number], segment?: CoverageSegment) => {
     const state = current.current;
     if (!state || state.uid !== firebaseAuth.currentUser?.uid) return;
+    if (segment && !validSegment(segment)) return;
     const id = segment ? segmentId(segment) : pointId(pt[0], pt[1]);
-    if (state.data.points[id]) return;
+    const existing = state.data.points[id];
+    // Preserve legacy history, but revalidate its geometry against car roads.
+    if (existing && (!segment || validSegment(existing.segment))) return;
     const p = { id, lat: pt[0], lng: pt[1], t: new Date().toISOString(), ...(segment ? { segment } : {}) };
     state.data.points[id] = p;
     state.data.pending[id] = p;
     persist();
     if (segment) setSegments((previous) => [...previous, segment]);
+    else setTracks((previous) => [...previous, [pt]]);
   }, [persist]);
 
   // Cache downloaded history even when its roads are outside the viewport.
@@ -77,7 +81,7 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segm
       for (const segment of track.segments ?? []) {
         if (!validSegment(segment)) continue;
         const id = segmentId(segment);
-        if (state.data.points[id]) continue;
+        if (validSegment(state.data.points[id]?.segment)) continue;
         state.data.points[id] = { id, lat: (segment.aLat + segment.bLat) / 2, lng: (segment.aLng + segment.bLng) / 2, t: new Date().toISOString(), segment };
         changed = true;
       }
@@ -93,7 +97,7 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segm
       persist();
       setTracks(Object.values(state.data.points).map((p) => [[p.lat, p.lng]]));
       setSegments(Object.values(state.data.points).flatMap((p) => p.segment && validSegment(p.segment) ? [p.segment] : []));
-      setSyncStatus(`Kohalikult ${Object.keys(state.data.points).length} · ootel ${Object.keys(state.data.pending).length}`);
+      setSyncStatus(`Kohalikult ${Object.keys(state.data.points).length} kirjet (GPS + lõigud) · ootel ${Object.keys(state.data.pending).length}`);
     }
   }, [cloudTracks, owner, persist]);
 
@@ -112,9 +116,12 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segm
         await setDoc(doc(firestore, "tracks", trackId), { userId: owner, startedAt: serverTimestamp(), coverage: true }, { merge: true });
         if (firebaseAuth.currentUser?.uid !== owner) return;
         await appendFirebaseTrackPoints(trackId, batch);
-        for (const p of batch) delete state.data.pending[p.id];
+        for (const p of batch) {
+          // A legacy segment can be upgraded while its old upload is in flight.
+          if (state.data.pending[p.id] === p) delete state.data.pending[p.id];
+        }
         if (current.current === state) persist();
-        if (current.current === state) setSyncStatus(`Pilves kinnitatud · kohalikult ${Object.keys(state.data.points).length}`);
+        if (current.current === state) setSyncStatus(`Pilves kinnitatud · kohalikult ${Object.keys(state.data.points).length} kirjet (GPS + lõigud)`);
       } catch (error) {
         if (current.current === state) setSyncStatus(`Pilve salvestus ebaõnnestus: ${error instanceof Error ? error.message : String(error)}`);
         // Keep the durable queue for reconnect, reload, or the next timer tick.

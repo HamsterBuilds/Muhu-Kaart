@@ -7,7 +7,8 @@ import type {
 } from "leaflet";
 import { Map as MapIcon, Navigation } from "lucide-react";
 import { createBuildingDepthLayer } from "@/lib/building-depth";
-import { roadGapPath } from "@/lib/road-gap";
+import { roadGapPath, savedRoadGapPaths } from "@/lib/road-gap";
+import type { CoverageSegment } from "@/hooks/useRoadCoverage";
 import { VectorTile } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
 import "leaflet/dist/leaflet.css";
@@ -22,6 +23,7 @@ import {
   modeForZoom,
   roadBBox,
   segmentDistanceMeters,
+  isMotorRoad,
   type Cell,
   type CellFetchState,
   type FetchMode,
@@ -58,7 +60,6 @@ const CORRIDOR_TRIGGER_METERS = 120;
 const ROAD_INDEX_DEG = 0.01;
 const VECTOR_ROAD_TILES = "https://vector.openstreetmap.org/shortbread_v1/{z}/{x}/{y}.mvt";
 
-type CoverageSegment = { aLat: number; aLng: number; bLat: number; bLng: number };
 type Props = {
   points: MapPoint[];
   tracks: [number, number][][];
@@ -134,6 +135,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     let buildingDepth: ReturnType<typeof createBuildingDepthLayer> | undefined;
     let miniature: LeafletMap | undefined;
     let sizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnect: (() => void) | undefined;
     const roadStore = roadsRef.current;
     const roadBoxStore = roadBoxRef.current;
     const roadSpatialStore = roadSpatialRef.current;
@@ -254,8 +256,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                 for (let i = 0; i < streets.length; i++) {
                   const feature = streets.feature(i);
                   if (feature.type !== 2) continue;
-                  // Include sidewalks, paths, cycleways and steps as continuous
-                  // coverable roads, regardless of the base map's dashed style.
+                  // Exclude non-car roads before rendering, indexing or gap repair.
+                  if (!isMotorRoad(feature.properties)) continue;
                   const scale = size / streets.extent;
                   const geometry = feature.loadGeometry();
                   for (let lineIndex = 0; lineIndex < geometry.length; lineIndex++) {
@@ -279,7 +281,9 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                         ) < 750,
                       )))
                     ) {
-                      nearbyRoads.push({ id: `vt:${coords.z}:${coords.x}:${coords.y}:${feature.id}:${lineIndex}`, coords: roadCoords });
+                      // MVT feature IDs are optional (and need not be unique).
+                      // The feature's tile-local index always identifies its geometry.
+                      nearbyRoads.push({ id: `vt:${coords.z}:${coords.x}:${coords.y}:${i}:${lineIndex}`, coords: roadCoords });
                     }
                   }
                 }
@@ -394,9 +398,9 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           }
         }
         // An uncertain fix between neighbouring roads is not proof of a visit.
-        if (nearest && nearestDistance <= 3 && secondDistance - nearestDistance >= 1.5) {
+        if (nearest && nearestDistance <= roadHitMetersRef.current && secondDistance - nearestDistance >= 1.5) {
           const { a, b } = nearest;
-          coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1] });
+          coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1], motorRoad: true });
         }
       };
       processPointRef.current = processPoint;
@@ -435,7 +439,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
               // y/x are already integer cell indices. A float round-trip can
               // floor into the preceding cell and miss restored coverage.
               const key = `${y}:${x}`;
-              replayCells.add(key);
+              // A point within the matching radius can be across a cell edge.
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) replayCells.add(`${y + dy}:${x + dx}`);
+              }
               const ids = roadSpatialRef.current.get(key) ?? new Set<string>();
               ids.add(road.id);
               roadSpatialRef.current.set(key, ids);
@@ -457,6 +464,20 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         // katvust. Nii ei muutu aastatepikkuse ajaloo laadimine aeglaseks.
         for (const key of replayCells) {
           for (const pt of savedCoverageSpatialRef.current.get(key) ?? []) processPoint(pt);
+        }
+        // Repair bounded holes in old coverage too, not only the current GPS trip.
+        // Interpolated points are matched back to roads before being persisted.
+        for (const road of roads) {
+          const box = roadBBox(road.coords);
+          const anchors: [number, number][] = [];
+          for (let y = Math.floor(box[0] / ROAD_INDEX_DEG) - 1; y <= Math.floor(box[2] / ROAD_INDEX_DEG) + 1; y++) {
+            for (let x = Math.floor(box[1] / ROAD_INDEX_DEG) - 1; x <= Math.floor(box[3] / ROAD_INDEX_DEG) + 1; x++) {
+              anchors.push(...(savedCoverageSpatialRef.current.get(`${y}:${x}`) ?? []));
+            }
+          }
+          for (const path of savedRoadGapPaths(road, anchors)) {
+            for (const pt of path) processPoint(pt);
+          }
         }
       };
       vectorRoadSinkRef.current = (roads) => addRoads(roads, false);
@@ -568,6 +589,17 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       };
       corridorFetchRef.current = corridorFetch;
 
+      reconnect = () => {
+        // Retry failed tiles and road queries without requiring a pan or GPS fix.
+        for (const [key, state] of cellStateRef.current) {
+          if (!state.ok) cellStateRef.current.delete(key);
+        }
+        redRoadTiles.redraw();
+        refreshQueue();
+        if (lastFixRef.current) corridorFetch(lastFixRef.current);
+      };
+      window.addEventListener("online", reconnect);
+
       let fetchTimer: ReturnType<typeof setTimeout> | null = null;
       const scheduleFetch = () => {
         if (fetchTimer) clearTimeout(fetchTimer);
@@ -601,6 +633,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     })();
     return () => {
       cancelled = true;
+      if (reconnect) window.removeEventListener("online", reconnect);
       processPointRef.current = () => {};
       corridorFetchRef.current = () => {};
       vectorRoadSinkRef.current = () => {};
@@ -667,6 +700,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const renderer = coverageRendererRef.current;
     if (!L || !layer || !renderer) return;
     for (const s of savedSegments) {
+      if (!s.motorRoad) continue;
       const key = [`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_");
       if (restoredSegmentsRef.current.has(key)) continue;
       const poly = L.polyline([[s.aLat, s.aLng], [s.bLat, s.bLng]], {
@@ -689,6 +723,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const coverage = savedCoverageRef.current;
     const spatial = savedCoverageSpatialRef.current;
     const added: [number, number][] = [];
+    let needsRoadIndex = false;
     const addCoveragePoint = (pt: [number, number]) => {
       const latCell = Math.round(pt[0] / 0.000045);
       const lngCell = Math.round(pt[1] / 0.00008);
@@ -705,11 +740,15 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     }
     for (const pt of added) {
       const key = `${Math.floor(pt[0] / ROAD_INDEX_DEG)}:${Math.floor(pt[1] / ROAD_INDEX_DEG)}`;
+      if (!spatial.has(key)) needsRoadIndex = true;
       const list = spatial.get(key) ?? [];
       list.push(pt);
       spatial.set(key, list);
     }
     for (const pt of added) processPointRef.current(pt);
+    // Tiles may have loaded before history arrived and skipped their road index.
+    // Re-decode them when new coverage arrives, even after the initial view restore.
+    if (mapReady && needsRoadIndex) vectorRoadRefreshRef.current();
     // Without a GPS fix (for example on another desktop), show the restored
     // history instead of leaving the user on the default Muhu view.
     if (mapReady && mapRef.current && coverage.size && !restoredViewRef.current) {

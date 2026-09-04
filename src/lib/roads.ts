@@ -14,6 +14,18 @@ const OVERPASS_TIMEOUT_MS = 20_000;
 const MAJOR_FILTER =
   '["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]';
 
+const MOTOR_ROAD_KINDS = new Set([
+  "motorway", "trunk", "primary", "secondary", "tertiary",
+  "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link",
+  "residential", "unclassified", "living_street", "service", "road", "track",
+]);
+export function isMotorRoad(properties: Record<string, unknown>): boolean {
+  return MOTOR_ROAD_KINDS.has(String(properties["highway"] ?? properties["kind"] ?? ""))
+    && properties["rail"] !== true
+    && properties["motorcar"] !== "no" && properties["motor_vehicle"] !== "no";
+}
+const MOTOR_ROAD_FILTER = `["highway"~"^(${[...MOTOR_ROAD_KINDS].join("|")})$"]["motorcar"!="no"]["motor_vehicle"!="no"]`;
+
 export function gridDeg(mode: FetchMode): number {
   return mode === "fine" ? FINE_DEG : COARSE_DEG;
 }
@@ -117,7 +129,7 @@ export async function fetchRoadsForCells(
   mode: FetchMode = "fine",
 ): Promise<Road[]> {
   if (!cells.length) return [];
-  const filter = mode === "coarse" ? MAJOR_FILTER : '["highway"]';
+  const filter = mode === "coarse" ? MAJOR_FILTER + '["motorcar"!="no"]["motor_vehicle"!="no"]' : MOTOR_ROAD_FILTER;
   const parts = cells
     .map(
       (c) =>
@@ -136,8 +148,9 @@ function parseOverpass(json: unknown): Road[] {
   if (!Array.isArray(elements)) return roads;
   for (const el of elements) {
     if (typeof el !== "object" || el === null) continue;
-    const e = el as { type?: unknown; id?: unknown; geometry?: unknown };
+    const e = el as { type?: unknown; id?: unknown; geometry?: unknown; tags?: Record<string, unknown> };
     if (e.type !== "way" || typeof e.id !== "number" || !Array.isArray(e.geometry)) continue;
+    if (!e.tags || !isMotorRoad(e.tags)) continue;
     const coords: [number, number][] = [];
     for (const node of e.geometry) {
       if (typeof node !== "object" || node === null) continue;

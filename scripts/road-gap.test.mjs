@@ -11,7 +11,7 @@ function moduleAt(path, require) {
   return exports;
 }
 const roads = moduleAt("../src/lib/roads.ts",()=>({}));
-const {roadGapPath} = moduleAt("../src/lib/road-gap.ts",()=>roads);
+const {roadGapPath, savedRoadGapPaths} = moduleAt("../src/lib/road-gap.ts",()=>roads);
 const bend = {id:"bend",coords:[[0,0],[0,0.0003],[0.0003,0.0003]]};
 test("short gap follows road bend, not diagonal shortcut",()=>{
   const path=roadGapPath([bend],[0,0.00001],[0.00029,0.0003]);
@@ -33,4 +33,28 @@ test("parallel plausible roads do not produce guessed coverage",()=>{
 test("different roads and long gaps are not bridged",()=>{
   assert.equal(roadGapPath([bend],[0,0],[0.01,0.01]).length,0);
   assert.equal(roadGapPath([{id:"long",coords:[[0,0],[0,0.01]]}],[0,0],[0,0.005]).length,0);
+});
+
+test("duplicate and reversed map sources do not disable gap repair", () => {
+  assert.ok(roadGapPath([bend, {id:"duplicate", coords:[...bend.coords].reverse()}], [0,0.00001], [0.00029,0.0003]).length > 10);
+});
+
+test("saved green-red-green holes restore along the road regardless of upload order", () => {
+  const paths = savedRoadGapPaths(bend, [[0.00029,0.0003], [0,0.00001]]);
+  assert.equal(paths.length, 1);
+  assert.ok(paths[0].length > 10);
+  assert.ok(paths[0].every(p => p[0] === 0 || Math.abs(p[1] - 0.0003) < 1e-10));
+  assert.equal(savedRoadGapPaths(bend, [[0,0], [0.01,0.01]]).length, 0);
+});
+
+test("only car-road types enter rendering, coverage and gap inference", () => {
+  for (const kind of ["footway", "path", "cycleway", "steps", "pedestrian", "bridleway", "platform", "construction", "unknown"]) {
+    assert.equal(roads.isMotorRoad({kind}), false, kind);
+    assert.equal(roads.isMotorRoad({highway:kind}), false, kind);
+  }
+  for (const kind of ["primary", "secondary", "residential", "service", "living_street", "track"]) {
+    assert.equal(roads.isMotorRoad({kind}), true, kind);
+  }
+  assert.equal(roads.isMotorRoad({kind:"service", motorcar:"no"}), false);
+  assert.equal(roads.isMotorRoad({kind:"primary", rail:true}), false);
 });

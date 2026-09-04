@@ -13,7 +13,7 @@ test("APK obtains road geometry through native HTTP without a localhost server",
     exports, URLSearchParams, DOMException,
     require: () => ({ Capacitor: { isNativePlatform: () => true }, CapacitorHttp: { post: async (options) => {
       calls.push(options);
-      return { status: 200, data: { elements: [{ type: "way", id: 42, geometry: [{lat:59,lon:24},{lat:59.001,lon:24.001}] }] } };
+      return { status: 200, data: { elements: [{ type: "way", id: 42, tags: { highway: "residential" }, geometry: [{lat:59,lon:24},{lat:59.001,lon:24.001}] }] } };
     } } }),
     fetch: () => { throw new Error("APK must not depend on the web-only proxy"); },
   });
@@ -35,7 +35,7 @@ test("native roads fail over after connection and HTTP failures", async () => {
       calls.push(url);
       if (calls.length === 1) throw new Error("Connection failed");
       if (calls.length === 2) return { status: 503 };
-      return { status: 200, data: { elements: [{type:"way", id:42, geometry:[{lat:59,lon:24},{lat:59.001,lon:24.001}]}] } };
+      return { status: 200, data: { elements: [{type:"way", id:42, tags:{highway:"residential"}, geometry:[{lat:59,lon:24},{lat:59.001,lon:24.001}]}] } };
     } } }),
   });
   const roads = await exports.fetchRoadsForCells([{key:"test",bbox:{south:59,west:24,north:59.01,east:24.01}}]);
@@ -122,6 +122,44 @@ test("coverage survives reload and duplicate visits keep one upload", () => {
   assert.equal(mount(storage, "bob").states[1].length, 0);
 });
 
+test("new local GPS samples reach coverage replay before cloud sync or reload", () => {
+  const { hook, states } = mount(new Map(), "alice");
+  hook.rememberCoverage([58.6, 23.2]);
+  hook.rememberCoverage([58.6, 23.2]);
+  hook.rememberCoverage([58.61, 23.21]);
+  assert.equal(states[1].length, 2);
+  assert.equal(states[1][1][0][0], 58.61);
+});
+
+test("legacy unclassified coverage is retained but only car-road revalidation makes it green", () => {
+  const segment = {aLat:58.6, aLng:23.2, bLat:58.601, bLng:23.201};
+  const id = "segment_58.6000000_23.2000000_58.6010000_23.2010000";
+  const point = {id, lat:58.6, lng:23.2, t:"2026-09-04T00:00:00Z", segment};
+  const storage = new Map([["muhu-road-coverage-v1:alice", JSON.stringify({points:{[id]:point},pending:{}})]]);
+  const app = mount(storage, "alice");
+  assert.equal(app.states[1].length, 1);
+  assert.equal(app.states[3].length, 0);
+  app.hook.rememberCoverage([58.6,23.2], {...segment, motorRoad:true});
+  assert.equal(app.states[3].length, 1);
+  const saved = JSON.parse(storage.get("muhu-road-coverage-v1:alice"));
+  assert.equal(Object.keys(saved.points).length, 1);
+  assert.equal(saved.pending[id].segment.motorRoad, true);
+});
+
+test("all 1394 vector features survive missing or repeated optional feature IDs", () => {
+  const mapSource = readFileSync(new URL("../src/components/MuhuMap.tsx", import.meta.url), "utf8");
+  const statement = mapSource.match(/nearbyRoads\.push\([^\n]+/)[0];
+  const nearbyRoads = [];
+  for (let i = 0; i < 1394; i++) {
+    vm.runInNewContext(statement, {
+      nearbyRoads, coords: { z: 14, x: 1, y: 2 }, i,
+      feature: { id: i % 2 ? undefined : 42 }, lineIndex: 0,
+      roadCoords: [[58.6, 23.2], [58.601, 23.201]],
+    });
+  }
+  assert.equal(new Map(nearbyRoads.map(road => [road.id, road])).size, 1394);
+});
+
 test("acknowledged local coverage remains visible with an empty upload queue", () => {
   const storage = new Map();
   mount(storage, "alice").hook.rememberCoverage([58.6, 23.2]);
@@ -133,10 +171,10 @@ test("acknowledged local coverage remains visible with an empty upload queue", (
 
 test("road geometry survives reload without GPS or road downloads and reverse visits deduplicate", () => {
   const storage = new Map();
-  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201 };
+  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201, motorRoad: true };
   const first = mount(storage, "alice");
   first.hook.rememberCoverage([58.6, 23.2], segment);
-  first.hook.rememberCoverage([58.601, 23.201], { aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng });
+  first.hook.rememberCoverage([58.601, 23.201], { aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng, motorRoad: true });
   const restored = mount(storage, "alice");
   assert.equal(restored.states[3].length, 1);
   assert.equal(restored.states[3][0].bLng, 23.201);
@@ -184,7 +222,7 @@ test("cloud history uses only owner filter and sorts locally without a composite
 
 test("10,000 repeat passes after reload do not grow saved road geometry or requeue uploads", () => {
   const storage = new Map();
-  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201 };
+  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201, motorRoad: true };
   mount(storage, "alice").hook.rememberCoverage([58.6, 23.2], segment);
   const saved = JSON.parse(storage.get("muhu-road-coverage-v1:alice"));
   saved.pending = {};
@@ -194,6 +232,7 @@ test("10,000 repeat passes after reload do not grow saved road geometry or reque
   for (let i = 0; i < 10000; i++) {
     hook.rememberCoverage([58.6 + (i % 100) * 0.000001, 23.2], i % 2 ? segment : {
       aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng,
+      motorRoad: true,
     });
   }
   assert.equal(storage.get("muhu-road-coverage-v1:alice"), before);
