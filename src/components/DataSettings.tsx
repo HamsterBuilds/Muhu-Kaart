@@ -19,7 +19,7 @@ export default function DataSettings({ tracking }: { tracking: boolean }) {
         if (!token) throw new Error("Sign in first");
         const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
         if (Capacitor.isNativePlatform()) {
-          const origin = import.meta.env.VITE_APP_SERVER_URL;
+          const origin = import.meta.env["VITE_APP_SERVER_URL"];
           if (!origin || !origin.startsWith("https://")) throw new Error("Admin server URL has not been configured");
           const response = await CapacitorHttp.post({url: `${origin.replace(/\/$/, "")}/api/admin/delete-tracks`,headers,data:{confirmation},readTimeout:300000});
           if (response.status !== 200) throw new Error(response.data?.message ?? "Server deletion failed");

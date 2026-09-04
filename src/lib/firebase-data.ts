@@ -219,7 +219,7 @@ export async function listFirebaseGroups() {
     memberships.docs.map(async (m) => {
       const snap = await getDoc(doc(firestore, "groups", m.id));
       const d = snap.data();
-      return d ? { id: snap.id, name: d.name as string, join_code: d.joinCode as string } : null;
+      return d ? { id: snap.id, name: d["name"] as string, join_code: d["joinCode"] as string } : null;
     }),
   );
   return groups.filter((g): g is FirebaseGroup => !!g);
@@ -252,8 +252,8 @@ export async function joinFirebaseGroup(joinCode: string) {
   ]);
   return {
     id: group.id,
-    name: group.data().name as string,
-    join_code: group.data().joinCode as string,
+    name: group.data()["name"] as string,
+    join_code: group.data()["joinCode"] as string,
   } satisfies FirebaseGroup;
 }
 export async function listFirebasePoints(groupId: string): Promise<MapPointData[]> {
@@ -271,16 +271,16 @@ export async function listFirebasePoints(groupId: string): Promise<MapPointData[
       const visit = await getDoc(doc(firestore, "points", p.id, "visits", userId));
       return {
         id: p.id,
-        title: d.title as string,
-        description: (d.description as string | null) ?? null,
+        title: d["title"] as string,
+        description: (d["description"] as string | null) ?? null,
         imageUrl: null,
-        lat: d.lat as number,
-        lng: d.lng as number,
+        lat: d["lat"] as number,
+        lng: d["lng"] as number,
         aiStatus: "disabled",
-        createdAt: d.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
-        mine: d.userId === userId,
+        createdAt: d["createdAt"]?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+        mine: d["userId"] === userId,
         visited: visit.exists(),
-        authorName: (d.authorName as string) ?? "Kasutaja",
+        authorName: (d["authorName"] as string) ?? "Kasutaja",
       };
     }),
   );
@@ -365,11 +365,11 @@ export async function listFirebaseTracks() {
       );
       return {
         id: t.id,
-        coverage: t.data().coverage === true,
-        segments: points.docs.flatMap((p) => p.data().segment ? [p.data().segment as CoverageSegment] : []),
-        startedAt: t.data().startedAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+        coverage: t.data()["coverage"] === true,
+        segments: points.docs.flatMap((p) => p.data()["segment"] ? [p.data()["segment"] as CoverageSegment] : []),
+        startedAt: t.data()["startedAt"]?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         points: points.docs.map(
-          (p) => [p.data().lat as number, p.data().lng as number] as [number, number],
+          (p) => [p.data()["lat"] as number, p.data()["lng"] as number] as [number, number],
         ),
       };
     }),

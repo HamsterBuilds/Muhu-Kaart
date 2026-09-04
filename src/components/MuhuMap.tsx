@@ -4,6 +4,8 @@ import type {
   LayerGroup,
   Polyline as LeafletPolyline,
   Canvas as LeafletCanvas,
+  Coords,
+  DoneCallback,
 } from "leaflet";
 import { Map as MapIcon, Navigation } from "lucide-react";
 import { createBuildingDepthLayer } from "@/lib/building-depth";
@@ -180,8 +182,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
 
       // Punased teed tulevad OSM-i vektorplaatidest, mitte ebakindlast suurest
       // Overpassi päringust. Plaadid laaditakse automaatselt igal liigutamisel.
-      const RedRoadTiles = L.GridLayer.extend({
-        createTile(coords: { x: number; y: number; z: number }, done: (error?: Error | null, tile?: HTMLCanvasElement) => void) {
+      class RedRoadTiles extends L.GridLayer {
+        override createTile(coords: Coords, done: DoneCallback) {
           const canvas = document.createElement("canvas");
           const size = 256;
           canvas.width = size;
@@ -197,12 +199,12 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             })
             .then((data) => {
               const tile = new VectorTile(new PbfReader(new Uint8Array(data)));
-              const land = tile.layers.land;
+              const land = tile.layers["land"];
               if (land) {
                 const woods: [number, number][][] = [];
                 for (let i = 0; i < land.length; i++) {
                   const feature = land.feature(i);
-                  if (feature.type !== 3 || feature.properties.kind !== "forest") continue;
+                  if (feature.type !== 3 || feature.properties["kind"] !== "forest") continue;
                   for (const ring of feature.loadGeometry()) woods.push(ring.map(point => {
                     const p = map.unproject(L.point(coords.x * size + point.x * size / land.extent, coords.y * size + point.y * size / land.extent), coords.z);
                     return [p.lat, p.lng];
@@ -210,7 +212,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                 }
                 buildingDepth?.setWoodland(`${coords.z}:${coords.x}:${coords.y}`, woods);
               }
-              const buildings = tile.layers.buildings;
+              const buildings = tile.layers["buildings"];
               if (buildings) {
                 const rings: [number, number][][] = [];
                 for (let i = 0; i < buildings.length; i++) {
@@ -224,17 +226,17 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                   }
                 }
                 const labels: { point: [number, number]; text: string }[] = [];
-                const addresses = tile.layers.addresses;
+                const addresses = tile.layers["addresses"];
                 if (addresses) for (let i = 0; i < addresses.length; i++) {
                   const feature = addresses.feature(i);
                   const point = feature.loadGeometry()[0]?.[0];
-                  if (!point || !feature.properties.housenumber) continue;
+                  if (!point || !feature.properties["housenumber"]) continue;
                   const p = map.unproject(L.point(coords.x * size + point.x * size / addresses.extent, coords.y * size + point.y * size / addresses.extent), coords.z);
-                  labels.push({ point: [p.lat, p.lng], text: String(feature.properties.housenumber) });
+                  labels.push({ point: [p.lat, p.lng], text: String(feature.properties["housenumber"]) });
                 }
                 buildingDepth?.setTile(`${coords.z}:${coords.x}:${coords.y}`, rings, labels);
               }
-              const streets = tile.layers.streets;
+              const streets = tile.layers["streets"];
               if (streets) {
                 const tileCenter = map.unproject(L.point((coords.x + 0.5) * size, (coords.y + 0.5) * size), coords.z);
                 const currentFix = lastFixRef.current;
@@ -290,15 +292,15 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                 vectorRoadRenderRef.current(`${coords.z}:${coords.x}:${coords.y}`, visibleLines);
                 if (nearbyRoads.length) vectorRoadSinkRef.current(nearbyRoads);
               }
-              done(null, canvas);
+              done(undefined, canvas);
             })
             .catch((error: unknown) => {
               console.warn("Road geometry tile could not load", error);
               done(error instanceof Error ? error : new Error("Teede plaat ebaõnnestus"), canvas);
             });
           return canvas;
-        },
-      });
+        }
+      }
       const redRoadTiles = new RedRoadTiles({
         tileSize: 256,
         minZoom: 11,

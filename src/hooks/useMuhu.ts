@@ -16,7 +16,7 @@ function usableFix(lat: number, lng: number, accuracy?: number): Position | null
   // Esimene GPS-fiks võib olla ajutiselt ebatäpne. Seda ei tohi ära visata,
   // sest siis kaob kasutaja asukohamärk täielikult; kaardil näidatav ring
   // annab selle tegelikust täpsusest kohe märku.
-  return { lat, lng, accuracy: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : undefined };
+  return { lat, lng, ...(typeof accuracy === "number" && Number.isFinite(accuracy) ? { accuracy } : {}) };
 }
 export function useGeolocation(active: boolean) {
   const [pos, setPos] = useState<Position | null>(null);
@@ -222,8 +222,8 @@ export function usePointActions(_code: string | null, groupId: string | null) {
     },
   });
   const update = useMutation({
-    mutationFn: (i: { id: string; title?: string; description?: string }) =>
-      api.updateFirebasePoint(i.id, { title: i.title, description: i.description }),
+    mutationFn: ({ id, ...changes }: { id: string; title?: string; description?: string }) =>
+      api.updateFirebasePoint(id, changes),
     onSuccess: () => {
       invalidate();
       toast.success("Salvestatud");
