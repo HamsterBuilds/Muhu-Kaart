@@ -43,6 +43,29 @@ test("native roads fail over after connection and HTTP failures", async () => {
   assert.equal(new Set(calls).size, 3);
 });
 
+test("live matching marks only the nearest road, not parallel neighbours", () => {
+  const mapSource = readFileSync(new URL("../src/components/MuhuMap.tsx", import.meta.url), "utf8");
+  const body = mapSource.slice(mapSource.indexOf("const processPoint ="), mapSource.indexOf("processPointRef.current = processPoint;"));
+  const marked = [];
+  const roads = new Map([
+    ["near", {coords:[[0,0],[0,1]]}],
+    ["parallel", {coords:[[0.00005,0],[0.00005,1]]}],
+  ]);
+  const context = {
+    ROAD_INDEX_DEG: 1,
+    roadSpatialRef:{current:new Map([["0:0",new Set(roads.keys())]])},
+    roadBoxRef:{current:new Map([...roads.keys()].map(id=>[id,[-1,-1,1,1]]))},
+    roadsRef:{current:roads}, roadHitMetersRef:{current:12},
+    segmentDistanceMeters:(pt,a)=>Math.abs(pt[0]-a[0])*111320,
+    coverageCallback:{current:(_pt,segment)=>marked.push(segment)},
+  };
+  vm.runInNewContext(ts.transpileModule(body + "processPoint([0,0.5]);", {
+    compilerOptions:{target:ts.ScriptTarget.ES2022},
+  }).outputText,context);
+  assert.equal(marked.length,1);
+  assert.equal(marked[0].aLat,0);
+});
+
 const source = ts.transpileModule(readFileSync(new URL("../src/hooks/useRoadCoverage.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
