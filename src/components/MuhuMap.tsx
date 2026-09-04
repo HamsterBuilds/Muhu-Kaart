@@ -363,6 +363,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         let nearest: { a: [number, number]; b: [number, number] } | null = null;
         let nearestDistance = roadHitMetersRef.current;
         let secondDistance = Infinity;
+        const seenSegments = new Set<string>();
         for (const id of candidates) {
           const box = roadBoxRef.current.get(id);
           if (!box) continue;
@@ -377,9 +378,12 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           const road = roadsRef.current.get(id);
           if (!road) continue;
           for (let i = 0; i < road.coords.length - 1; i++) {
+            const segmentKey = [road.coords[i]!.map(n => n.toFixed(6)).join(","), road.coords[i+1]!.map(n => n.toFixed(6)).join(",")].sort().join(";");
+            if (seenSegments.has(segmentKey)) continue;
+            seenSegments.add(segmentKey);
             const distance = segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!);
             if (distance < nearestDistance) {
-              secondDistance = nearestDistance;
+              if (nearest) secondDistance = nearestDistance;
               const a = road.coords[i]!;
               const b = road.coords[i + 1]!;
               nearestDistance = distance;

@@ -49,6 +49,7 @@ test("live matching marks only the nearest road, not parallel neighbours", () =>
   const marked = [];
   const roads = new Map([
     ["near", {coords:[[0,0],[0,1]]}],
+    ["same-road-other-source", {coords:[[0,1],[0,0]]}],
     ["parallel", {coords:[[0.00005,0],[0.00005,1]]}],
   ]);
   const context = {
@@ -64,6 +65,14 @@ test("live matching marks only the nearest road, not parallel neighbours", () =>
   }).outputText,context);
   assert.equal(marked.length,1);
   assert.equal(marked[0].aLat,0);
+  // A single road 2 m away must also match with a 3 m search radius.
+  roads.delete("parallel");
+  context.roadHitMetersRef.current = 3;
+  marked.length = 0;
+  vm.runInNewContext(ts.transpileModule(body + "processPoint([0.000018,0.5]);", {
+    compilerOptions:{target:ts.ScriptTarget.ES2022},
+  }).outputText,{...context});
+  assert.equal(marked.length,1);
 });
 
 const source = ts.transpileModule(readFileSync(new URL("../src/hooks/useRoadCoverage.ts", import.meta.url), "utf8"), {
