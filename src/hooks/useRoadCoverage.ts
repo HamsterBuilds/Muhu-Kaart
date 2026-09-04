@@ -5,13 +5,13 @@ import { toast } from "sonner";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 import { appendFirebaseTrackPoints } from "@/lib/firebase-data";
 
-export type CoverageSegment = { aLat: number; aLng: number; bLat: number; bLng: number; motorRoad?: boolean };
+export type CoverageSegment = { aLat: number; aLng: number; bLat: number; bLng: number; motorRoad?: boolean; traversableRoad?: boolean; coverageVersion?: number };
 type Point = { id: string; lat: number; lng: number; t: string; segment?: CoverageSegment };
 type Store = { points: Record<string, Point>; pending: Record<string, Point> };
 const key = (uid: string) => `muhu-road-coverage-v1:${uid}`;
 const pointId = (lat: number, lng: number) => `${Math.round(lat / 0.000045)}_${Math.round(lng / 0.00008)}`;
 const segmentId = (s: CoverageSegment) => `segment_${[`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_")}`;
-const validSegment = (s: CoverageSegment | undefined): s is CoverageSegment => !!s && s.motorRoad === true && [s.aLat, s.aLng, s.bLat, s.bLng].every(Number.isFinite);
+const validSegment = (s: CoverageSegment | undefined): s is CoverageSegment => !!s && s.coverageVersion === 2 && s.traversableRoad === true && [s.aLat, s.aLng, s.bLat, s.bLng].every(Number.isFinite);
 
 /** The local copy is retained after acknowledgement; only the upload queue clears. */
 export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segments?: CoverageSegment[] }[]) {
@@ -50,7 +50,7 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segm
     current.current = user ? { uid: user.uid, data } : null;
     setOwner(user?.uid ?? null);
     // Separate samples must not be joined into artificial cross-island routes.
-    setTracks(Object.values(data.points).map((p) => [[p.lat, p.lng]]));
+    setTracks(Object.values(data.points).filter((p) => !p.segment).map((p) => [[p.lat, p.lng]]));
     setSegments(Object.values(data.points).flatMap((p) => p.segment && validSegment(p.segment) ? [p.segment] : []));
     setSyncStatus(`Kohalikult ${Object.keys(data.points).length} kirjet (GPS + lõigud) · ootel ${Object.keys(data.pending).length}`);
   }), []);
@@ -95,7 +95,7 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; segm
     }
     if (changed) {
       persist();
-      setTracks(Object.values(state.data.points).map((p) => [[p.lat, p.lng]]));
+      setTracks(Object.values(state.data.points).filter((p) => !p.segment).map((p) => [[p.lat, p.lng]]));
       setSegments(Object.values(state.data.points).flatMap((p) => p.segment && validSegment(p.segment) ? [p.segment] : []));
       setSyncStatus(`Kohalikult ${Object.keys(state.data.points).length} kirjet (GPS + lõigud) · ootel ${Object.keys(state.data.pending).length}`);
     }

@@ -47,10 +47,11 @@ test("saved green-red-green holes restore along the road regardless of upload or
   assert.equal(savedRoadGapPaths(bend, [[0,0], [0.01,0.01]]).length, 0);
 });
 
-test("only car-road types enter rendering, coverage and gap inference", () => {
+test("walk connectors are traversable but remain excluded from the red car-road layer", () => {
   for (const kind of ["footway", "path", "cycleway", "steps", "pedestrian", "bridleway", "platform", "construction", "unknown"]) {
     assert.equal(roads.isMotorRoad({kind}), false, kind);
     assert.equal(roads.isMotorRoad({highway:kind}), false, kind);
+    assert.equal(roads.isTraversableRoad({kind}), ["footway", "path", "cycleway", "steps", "pedestrian"].includes(kind), kind);
   }
   for (const kind of ["primary", "secondary", "residential", "service", "living_street", "track"]) {
     assert.equal(roads.isMotorRoad({kind}), true, kind);

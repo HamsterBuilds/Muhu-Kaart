@@ -9,7 +9,7 @@ import type {
 } from "leaflet";
 import { Map as MapIcon, Navigation } from "lucide-react";
 import { createBuildingDepthLayer } from "@/lib/building-depth";
-import { roadGapPath, savedRoadGapPaths } from "@/lib/road-gap";
+import { roadGapPath } from "@/lib/road-gap";
 import type { CoverageSegment } from "@/hooks/useRoadCoverage";
 import { VectorTile } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
@@ -26,6 +26,7 @@ import {
   roadBBox,
   segmentDistanceMeters,
   isMotorRoad,
+  isTraversableRoad,
   type Cell,
   type CellFetchState,
   type FetchMode,
@@ -106,7 +107,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const roadBoxRef = useRef(new Map<string, [number, number, number, number]>());
   const roadSpatialRef = useRef(new Map<string, Set<string>>());
   const cellStateRef = useRef(new Map<string, CellFetchState>());
-  const traveledRef = useRef<[number, number][]>([]);
   const savedCoverageRef = useRef(new Map<string, [number, number]>());
   const restoredViewRef = useRef(false);
   const savedCoverageSpatialRef = useRef(new Map<string, [number, number][]>());
@@ -122,7 +122,9 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const roadHitMetersRef = useRef(ROAD_HIT_METERS);
   const corridorRef = useRef<[number, number] | null>(null);
   const corridorFetchRef = useRef<(pt: [number, number]) => void>(() => {});
-  const processPointRef = useRef<(pt: [number, number]) => void>(() => {});
+  const processPointRef = useRef<(pt: [number, number], allowConnector?: boolean) => void>(() => {});
+  const gapPathRef = useRef<(from: [number, number], to: [number, number]) => [number, number][]>(() => []);
+  const rawFixesRef = useRef<[number, number][]>([]);
   const vectorRoadSinkRef = useRef<(roads: Road[]) => void>(() => {});
   const vectorRoadRenderRef = useRef<(key: string, lines: [number, number][][]) => void>(() => {});
   const vectorRoadRemoveRef = useRef<(key: string) => void>(() => {});
@@ -258,8 +260,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                 for (let i = 0; i < streets.length; i++) {
                   const feature = streets.feature(i);
                   if (feature.type !== 2) continue;
-                  // Exclude non-car roads before rendering, indexing or gap repair.
-                  if (!isMotorRoad(feature.properties)) continue;
+                  if (!isTraversableRoad(feature.properties)) continue;
+                  const motorRoad = isMotorRoad(feature.properties);
                   const scale = size / streets.extent;
                   const geometry = feature.loadGeometry();
                   for (let lineIndex = 0; lineIndex < geometry.length; lineIndex++) {
@@ -273,7 +275,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                       return [latLng.lat, latLng.lng] as [number, number];
                     });
                     if (roadCoords.length < 2) continue;
-                    visibleLines.push(roadCoords);
+                    if (motorRoad) visibleLines.push(roadCoords);
                     if (
                       indexForTracking &&
                       (hasSavedCoverage || (currentFix && roadCoords.some((point) =>
@@ -285,7 +287,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                     ) {
                       // MVT feature IDs are optional (and need not be unique).
                       // The feature's tile-local index always identifies its geometry.
-                      nearbyRoads.push({ id: `vt:${coords.z}:${coords.x}:${coords.y}:${i}:${lineIndex}`, coords: roadCoords });
+                      nearbyRoads.push({ id: `vt:${coords.z}:${coords.x}:${coords.y}:${i}:${lineIndex}`, coords: roadCoords, motorRoad });
                     }
                   }
                 }
@@ -355,7 +357,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         vectorLines.delete(key);
       };
       // Teede hankimine (punased) + läbitud lõikude roheliseks märkimine
-      const processPoint = (pt: [number, number]) => {
+      const processPoint = (pt: [number, number], allowConnector = false) => {
         // Kontrolli ainult lähimate ~1 km ruutude teid, mitte kõiki kaardile
         // laaditud teid. See hoiab liikumise sujuvana ka kümnete tuhandete teede korral.
         const candidates = new Set<string>();
@@ -366,9 +368,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             for (const id of roadSpatialRef.current.get(`${y + dy}:${x + dx}`) ?? []) candidates.add(id);
           }
         }
-        let nearest: { a: [number, number]; b: [number, number] } | null = null;
+        let nearest: { a: [number, number]; b: [number, number]; motorRoad: boolean } | null = null;
         let nearestDistance = roadHitMetersRef.current;
         let secondDistance = Infinity;
+        let nearestRoadId = "";
         const seenSegments = new Set<string>();
         for (const id of candidates) {
           const box = roadBoxRef.current.get(id);
@@ -389,23 +392,35 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             seenSegments.add(segmentKey);
             const distance = segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!);
             if (distance < nearestDistance) {
-              if (nearest) secondDistance = nearestDistance;
+              if (nearest && id !== nearestRoadId) secondDistance = nearestDistance;
               const a = road.coords[i]!;
               const b = road.coords[i + 1]!;
               nearestDistance = distance;
-              nearest = { a, b };
-            } else if (distance < secondDistance) {
+              nearest = { a, b, motorRoad: road.motorRoad !== false };
+              nearestRoadId = id;
+            } else if (id !== nearestRoadId && distance < secondDistance) {
               secondDistance = distance;
             }
           }
         }
         // An uncertain fix between neighbouring roads is not proof of a visit.
-        if (nearest && nearestDistance <= roadHitMetersRef.current && secondDistance - nearestDistance >= 1.5) {
-          const { a, b } = nearest;
-          coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1], motorRoad: true });
+        if (nearest && (nearest.motorRoad || allowConnector) && nearestDistance <= roadHitMetersRef.current && secondDistance - nearestDistance >= 1.5) {
+          const { a, b, motorRoad } = nearest;
+          coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1], motorRoad, traversableRoad: true, coverageVersion: 2 });
         }
       };
       processPointRef.current = processPoint;
+      const roadsNear = (from: [number, number], to: [number, number]) => {
+        const ids = new Set<string>();
+        for (const point of [from, to]) {
+          const y = Math.floor(point[0] / ROAD_INDEX_DEG), x = Math.floor(point[1] / ROAD_INDEX_DEG);
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            for (const id of roadSpatialRef.current.get(`${y+dy}:${x+dx}`) ?? []) ids.add(id);
+          }
+        }
+        return [...ids].flatMap(id => roadsRef.current.get(id) ?? []);
+      };
+      gapPathRef.current = (from, to) => roadGapPath(roadsNear(from, to), from, to, roadHitMetersRef.current);
 
       // Punased teed renderdatakse mitmikpolüjoonide rüpkgudes – ~300 teed ühes
       // lõuendi-kihis, et tuhanded teed ei maksaks tuhandeid renderdusobjekte
@@ -450,7 +465,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
               roadSpatialRef.current.set(key, ids);
             }
           }
-          if (renderRed) {
+          if (renderRed && road.motorRoad !== false) {
             pendingChunk.push(road.coords);
             if (pendingChunk.length >= ROADS_PER_CHUNK) flushChunk();
           }
@@ -460,26 +475,14 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         // Esimene GPS-fix ei pruugi veel rajapunktide massiivis olla, seega
         // kontrollime selle alati eraldi – see värvib kasutaja all oleva tee
         // roheliseks kohe pärast plaadi dekodeerimist.
-        if (lastFixRef.current) processPoint(lastFixRef.current);
-        for (const pt of traveledRef.current.slice(-300)) processPoint(pt);
+        const fixes = rawFixesRef.current.slice(-300);
+        for (let i = 1; i < fixes.length; i++) {
+          for (const pt of gapPathRef.current(fixes[i - 1]!, fixes[i]!)) processPoint(pt, true);
+        }
         // Uute teede puhul töötle ainult samas ruudus olevat salvestatud
         // katvust. Nii ei muutu aastatepikkuse ajaloo laadimine aeglaseks.
         for (const key of replayCells) {
           for (const pt of savedCoverageSpatialRef.current.get(key) ?? []) processPoint(pt);
-        }
-        // Repair bounded holes in old coverage too, not only the current GPS trip.
-        // Interpolated points are matched back to roads before being persisted.
-        for (const road of roads) {
-          const box = roadBBox(road.coords);
-          const anchors: [number, number][] = [];
-          for (let y = Math.floor(box[0] / ROAD_INDEX_DEG) - 1; y <= Math.floor(box[2] / ROAD_INDEX_DEG) + 1; y++) {
-            for (let x = Math.floor(box[1] / ROAD_INDEX_DEG) - 1; x <= Math.floor(box[3] / ROAD_INDEX_DEG) + 1; x++) {
-              anchors.push(...(savedCoverageSpatialRef.current.get(`${y}:${x}`) ?? []));
-            }
-          }
-          for (const path of savedRoadGapPaths(road, anchors)) {
-            for (const pt of path) processPoint(pt);
-          }
         }
       };
       vectorRoadSinkRef.current = (roads) => addRoads(roads, false);
@@ -614,8 +617,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       });
       scheduleFetch();
 
-      // Sünkroniseeri juba saabunud asukohad pärast kaardi valmimist
-      for (const pt of traveledRef.current) processPoint(pt);
       if (lastFixRef.current && !interactedRef.current) {
         map.setView(lastFixRef.current, Math.max(map.getZoom(), 17));
       }
@@ -637,6 +638,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       cancelled = true;
       if (reconnect) window.removeEventListener("online", reconnect);
       processPointRef.current = () => {};
+      gapPathRef.current = () => [];
       corridorFetchRef.current = () => {};
       vectorRoadSinkRef.current = () => {};
       vectorRoadRenderRef.current = () => {};
@@ -668,6 +670,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       restoredSegmentsRef.current.clear();
       savedCoverageRef.current.clear();
       savedCoverageSpatialRef.current.clear();
+      rawFixesRef.current = [];
       cellStateStore.clear();
       firstFixDoneRef.current = false;
     };
@@ -702,7 +705,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const renderer = coverageRendererRef.current;
     if (!L || !layer || !renderer) return;
     for (const s of savedSegments) {
-      if (!s.motorRoad) continue;
       const key = [`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_");
       if (restoredSegmentsRef.current.has(key)) continue;
       const poly = L.polyline([[s.aLat, s.aLng], [s.bLat, s.bLng]], {
@@ -810,14 +812,20 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     // reported uncertainty (capped) to decide which segment it belongs to.
     if (!Number.isFinite(me.lat) || !Number.isFinite(me.lng) || (me.accuracy ?? 0) > 20) {
       lastFixRef.current = null;
+      rawFixesRef.current = [];
       lastRoadFixTime.current = 0;
       return;
     }
     const fixTime = Date.now();
-    if (fixTime - lastRoadFixTime.current > 180_000) lastFixRef.current = null;
+    if (fixTime - lastRoadFixTime.current > 180_000) {
+      lastFixRef.current = null;
+      rawFixesRef.current = [];
+    }
     lastRoadFixTime.current = fixTime;
     roadHitMetersRef.current = Math.min(12, Math.max(ROAD_HIT_METERS, me.accuracy ?? ROAD_HIT_METERS));
     const pt: [number, number] = [me.lat, me.lng];
+    rawFixesRef.current.push(pt);
+    if (rawFixesRef.current.length > 600) rawFixesRef.current.splice(0, rawFixesRef.current.length - 600);
     const map = mapRef.current;
     if (map && !firstFixDoneRef.current) {
       firstFixDoneRef.current = true;
@@ -834,8 +842,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       corridorRef.current = pt;
       corridorFetchRef.current(pt);
     }
-    const traveled = traveledRef.current;
-    if (traveled.length > 3000) traveled.splice(0, traveled.length - 3000);
     const last = lastFixRef.current;
     lastFixRef.current = pt;
     const lastIndexed = lastVectorIndexFixRef.current;
@@ -846,46 +852,25 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       lastVectorIndexFixRef.current = pt;
       vectorRoadRefreshRef.current();
     }
-    // Esimese fikseeritud asukoha korral puudub veel eelmine rajapunkt. Proovi
-    // siiski kohe juba indeksis olevad teelõigud läbi – muidu jääks kasutaja
-    // all olev tee roheliseks värvimata kuni järgmise GPS-uuenduseni.
-    processPointRef.current(pt);
     if (last) {
       const d = distanceMeters({ lat: last[0], lng: last[1] }, { lat: pt[0], lng: pt[1] });
       if (d < 3) {
-        // Ka väga väike täpne GPS-nihkumine peab 2 m raadiuses teelõigu
-        // roheliseks märkimist uuendama, kuigi seda ei lisata uuesti rajale.
-        processPointRef.current(pt);
+        // Üksik GPS-fiks ei tõesta tee läbimist. Kinnita see ainult siis, kui
+        // kaks järjestikust fikksi sobivad samale kaarditeele.
+        for (const s of gapPathRef.current(last, pt)) processPointRef.current(s, true);
         return;
       }
       if (d > 250) {
         // A location jump is not evidence that the straight line was walked.
-        traveledRef.current.push(pt);
-        processPointRef.current(pt);
         return;
       }
       // Only bridge a short gap along one unambiguous mapped road. Never
       // interpolate a straight chord through side streets or parallel roads.
-      const nearby = new Set<string>();
-      for (const endpoint of [last, pt]) {
-        const y = Math.floor(endpoint[0] / ROAD_INDEX_DEG);
-        const x = Math.floor(endpoint[1] / ROAD_INDEX_DEG);
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          for (const id of roadSpatialRef.current.get(`${y+dy}:${x+dx}`) ?? []) nearby.add(id);
-        }
-      }
-      const nearbyRoads = [...nearby].flatMap(id => {
-        const road = roadsRef.current.get(id);
-        return road ? [road] : [];
-      });
-      for (const s of roadGapPath(nearbyRoads, last, pt)) {
-        traveledRef.current.push(s);
-        processPointRef.current(s);
+      for (const s of gapPathRef.current(last, pt)) {
+        processPointRef.current(s, true);
       }
       return;
     }
-    traveledRef.current.push(pt);
-    processPointRef.current(pt);
   }, [me, mapReady]);
 
   useEffect(() => {

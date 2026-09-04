@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
-export type Road = { id: string; coords: [number, number][] };
+export type Road = { id: string; coords: [number, number][]; motorRoad?: boolean };
 export type BBox = { south: number; west: number; north: number; east: number };
 export type Cell = { key: string; bbox: BBox };
 /** fine = kõik teed tihedal võrgul (zoom ≥ 13); coarse = suured teed hõredal võrgul (zoom 11–12). */
@@ -19,12 +19,17 @@ const MOTOR_ROAD_KINDS = new Set([
   "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link",
   "residential", "unclassified", "living_street", "service", "road", "track",
 ]);
+const CONNECTOR_ROAD_KINDS = new Set(["footway", "path", "cycleway", "pedestrian", "steps"]);
 export function isMotorRoad(properties: Record<string, unknown>): boolean {
   return MOTOR_ROAD_KINDS.has(String(properties["highway"] ?? properties["kind"] ?? ""))
     && properties["rail"] !== true
     && properties["motorcar"] !== "no" && properties["motor_vehicle"] !== "no";
 }
-const MOTOR_ROAD_FILTER = `["highway"~"^(${[...MOTOR_ROAD_KINDS].join("|")})$"]["motorcar"!="no"]["motor_vehicle"!="no"]`;
+export function isTraversableRoad(properties: Record<string, unknown>): boolean {
+  const kind = String(properties["highway"] ?? properties["kind"] ?? "");
+  return isMotorRoad(properties) || CONNECTOR_ROAD_KINDS.has(kind);
+}
+const TRAVERSABLE_ROAD_FILTER = `["highway"~"^(${[...MOTOR_ROAD_KINDS, ...CONNECTOR_ROAD_KINDS].join("|")})$"]`;
 
 export function gridDeg(mode: FetchMode): number {
   return mode === "fine" ? FINE_DEG : COARSE_DEG;
@@ -129,7 +134,7 @@ export async function fetchRoadsForCells(
   mode: FetchMode = "fine",
 ): Promise<Road[]> {
   if (!cells.length) return [];
-  const filter = mode === "coarse" ? MAJOR_FILTER + '["motorcar"!="no"]["motor_vehicle"!="no"]' : MOTOR_ROAD_FILTER;
+  const filter = mode === "coarse" ? MAJOR_FILTER : TRAVERSABLE_ROAD_FILTER;
   const parts = cells
     .map(
       (c) =>
@@ -150,14 +155,14 @@ function parseOverpass(json: unknown): Road[] {
     if (typeof el !== "object" || el === null) continue;
     const e = el as { type?: unknown; id?: unknown; geometry?: unknown; tags?: Record<string, unknown> };
     if (e.type !== "way" || typeof e.id !== "number" || !Array.isArray(e.geometry)) continue;
-    if (!e.tags || !isMotorRoad(e.tags)) continue;
+    if (!e.tags || !isTraversableRoad(e.tags)) continue;
     const coords: [number, number][] = [];
     for (const node of e.geometry) {
       if (typeof node !== "object" || node === null) continue;
       const p = node as { lat?: unknown; lon?: unknown };
       if (typeof p.lat === "number" && typeof p.lon === "number") coords.push([p.lat, p.lon]);
     }
-    if (coords.length >= 2) roads.push({ id: String(e.id), coords });
+    if (coords.length >= 2) roads.push({ id: String(e.id), coords, motorRoad: isMotorRoad(e.tags) });
   }
   return roads;
 }

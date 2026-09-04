@@ -3,10 +3,10 @@ type Point = [number, number];
 
 /** Infer only a short, unambiguous path on one mapped way, never a straight
  * chord through neighbouring roads. Missing/ambiguous topology means no guess. */
-export function roadGapPath(roads: Iterable<Road>, from: Point, to: Point): Point[] {
+export function roadGapPath(roads: Iterable<Road>, from: Point, to: Point, toleranceMeters = 3): Point[] {
   const matches: { road: Road; start: number; end: number }[] = [];
   for (const road of roads) {
-    let start = -1, end = -1, da = 3, db = 3;
+    let start = -1, end = -1, da = toleranceMeters, db = toleranceMeters;
     for (let i = 0; i < road.coords.length - 1; i++) {
       const a = road.coords[i]!, b = road.coords[i + 1]!;
       const x = segmentDistanceMeters(from, a, b), y = segmentDistanceMeters(to, a, b);
