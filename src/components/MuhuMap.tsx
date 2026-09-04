@@ -125,6 +125,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const processPointRef = useRef<(pt: [number, number], allowConnector?: boolean) => void>(() => {});
   const gapPathRef = useRef<(from: [number, number], to: [number, number]) => [number, number][]>(() => []);
   const rawFixesRef = useRef<[number, number][]>([]);
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
   const vectorRoadSinkRef = useRef<(roads: Road[]) => void>(() => {});
   const vectorRoadRenderRef = useRef<(key: string, lines: [number, number][][]) => void>(() => {});
   const vectorRoadRemoveRef = useRef<(key: string) => void>(() => {});
@@ -484,6 +486,17 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         for (const key of replayCells) {
           for (const pt of savedCoverageSpatialRef.current.get(key) ?? []) processPoint(pt);
         }
+        // Rebuild timestamp-bounded historical trips when their road tiles
+        // become available later (initial load, reconnect, or map pan).
+        for (const track of tracksRef.current) {
+          for (let i = 1; i < track.length; i++) {
+            const from = track[i - 1]!, to = track[i]!;
+            const fromKey = `${Math.floor(from[0] / ROAD_INDEX_DEG)}:${Math.floor(from[1] / ROAD_INDEX_DEG)}`;
+            const toKey = `${Math.floor(to[0] / ROAD_INDEX_DEG)}:${Math.floor(to[1] / ROAD_INDEX_DEG)}`;
+            if (!replayCells.has(fromKey) && !replayCells.has(toKey)) continue;
+            for (const pt of gapPathRef.current(from, to)) processPoint(pt, true);
+          }
+        }
       };
       vectorRoadSinkRef.current = (roads) => addRoads(roads, false);
       // Alles nüüd on nii nähtava punase kihi renderdaja kui 2 m rohelise
@@ -749,7 +762,12 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       list.push(pt);
       spatial.set(key, list);
     }
-    for (const pt of added) processPointRef.current(pt);
+    // Rebuild only within timestamp-bounded trips. Never infer between visits.
+    for (const track of tracks) {
+      for (let i = 1; i < track.length; i++) {
+        for (const pt of gapPathRef.current(track[i - 1]!, track[i]!)) processPointRef.current(pt, true);
+      }
+    }
     // Tiles may have loaded before history arrived and skipped their road index.
     // Re-decode them when new coverage arrives, even after the initial view restore.
     if (mapReady && needsRoadIndex) vectorRoadRefreshRef.current();

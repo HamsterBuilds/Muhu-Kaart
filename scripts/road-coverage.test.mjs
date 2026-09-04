@@ -122,6 +122,19 @@ test("coverage survives reload and duplicate visits keep one upload", () => {
   assert.equal(mount(storage, "bob").states[1].length, 0);
 });
 
+test("historical raw GPS rebuilds only inside timestamp-bounded trips", () => {
+  const raw = [
+    ["a",58.6,23.2,"2026-09-04T10:00:00Z",true],
+    ["b",58.6001,23.2,"2026-09-04T10:00:10Z",true],
+    ["c",58.6002,23.2,"2026-09-04T10:05:00Z",true],
+    ["d",58.6003,23.2,"2026-09-04T10:05:10Z",true],
+    ["legacy",58.6004,23.2,"2026-09-04T10:05:20Z",false],
+  ].map(([id,lat,lng,t,verifiedTime]) => [id,{id,lat,lng,t,verifiedTime}]);
+  const storage = new Map([["muhu-road-coverage-v1:alice",JSON.stringify({points:Object.fromEntries(raw),pending:{}})]]);
+  const tracks = mount(storage,"alice").states[1];
+  assert.equal(JSON.stringify(tracks.map(track => track.length)),"[2,2]");
+});
+
 test("a walk connector is green only when confirmed by consecutive movement", () => {
   const mapSource = readFileSync(new URL("../src/components/MuhuMap.tsx", import.meta.url), "utf8");
   const body = mapSource.slice(mapSource.indexOf("const processPoint ="), mapSource.indexOf("processPointRef.current = processPoint;"));

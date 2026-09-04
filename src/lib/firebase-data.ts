@@ -367,6 +367,11 @@ export async function listFirebaseTracks() {
         id: t.id,
         coverage: t.data()["coverage"] === true,
         segments: points.docs.flatMap((p) => p.data()["segment"] ? [p.data()["segment"] as CoverageSegment] : []),
+        recordedPoints: points.docs.filter((p) => !p.data()["segment"]).map((p) => ({
+          lat: p.data()["lat"] as number,
+          lng: p.data()["lng"] as number,
+          t: p.data()["recordedAt"]?.toDate?.()?.toISOString?.() ?? "",
+        })),
         startedAt: t.data()["startedAt"]?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         points: points.docs.filter((p) => !p.data()["segment"]).map(
           (p) => [p.data()["lat"] as number, p.data()["lng"] as number] as [number, number],

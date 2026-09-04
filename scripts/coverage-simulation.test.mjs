@@ -141,7 +141,7 @@ test("offline queue survives reload, failed uploads and reconnect without losing
   assert.equal(Object.keys(snapshot().pending).length,1394);
   assert.equal(cloud.size,0);
   app = mount();
-  assert.equal(app.render().localCoverage.length,1394);
+  assert.equal(app.render().localCoverage.flat().length,1394);
   await app.tick();
   assert.equal(Object.keys(snapshot().pending).length,1394);
   online=true;
