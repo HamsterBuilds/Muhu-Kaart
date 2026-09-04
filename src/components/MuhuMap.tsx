@@ -408,7 +408,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         // An uncertain fix between neighbouring roads is not proof of a visit.
         if (nearest && (nearest.motorRoad || allowConnector) && nearestDistance <= roadHitMetersRef.current && secondDistance - nearestDistance >= 1.5) {
           const { a, b, motorRoad } = nearest;
-          coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1], motorRoad, traversableRoad: true, coverageVersion: 2 });
+          coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1], motorRoad, traversableRoad: true, coverageVersion: 3 });
         }
       };
       processPointRef.current = processPoint;
