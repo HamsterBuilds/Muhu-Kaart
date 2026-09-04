@@ -681,41 +681,28 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   useEffect(() => {
     const coverage = savedCoverageRef.current;
     const spatial = savedCoverageSpatialRef.current;
-    coverage.clear();
-    spatial.clear();
+    const added: [number, number][] = [];
     const addCoveragePoint = (pt: [number, number]) => {
       const latCell = Math.round(pt[0] / 0.000045);
       const lngCell = Math.round(pt[1] / 0.00008);
-      coverage.set(`${latCell}:${lngCell}`, pt);
+      const id = `${latCell}:${lngCell}`;
+      if (coverage.has(id)) return;
+      coverage.set(id, pt);
+      added.push(pt);
     };
     for (const track of tracks) {
       for (let index = 0; index < track.length; index++) {
         const current = track[index]!;
-        const previous = index > 0 ? track[index - 1]! : null;
-        if (previous) {
-          const distance = distanceMeters(
-            { lat: previous[0], lng: previous[1] },
-            { lat: current[0], lng: current[1] },
-          );
-          const steps = Math.min(100, Math.ceil(distance / 5));
-          for (let step = 1; step < steps; step++) {
-            const f = step / steps;
-            addCoveragePoint([
-              previous[0] + (current[0] - previous[0]) * f,
-              previous[1] + (current[1] - previous[1]) * f,
-            ]);
-          }
-        }
         addCoveragePoint(current);
       }
     }
-    for (const pt of coverage.values()) {
+    for (const pt of added) {
       const key = `${Math.floor(pt[0] / ROAD_INDEX_DEG)}:${Math.floor(pt[1] / ROAD_INDEX_DEG)}`;
       const list = spatial.get(key) ?? [];
       list.push(pt);
       spatial.set(key, list);
     }
-    for (const pt of coverage.values()) processPointRef.current(pt);
+    for (const pt of added) processPointRef.current(pt);
     // Without a GPS fix (for example on another desktop), show the restored
     // history instead of leaving the user on the default Muhu view.
     if (mapReady && mapRef.current && coverage.size && !restoredViewRef.current) {
@@ -779,7 +766,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       return;
     }
     const fixTime = Date.now();
-    if (fixTime - lastRoadFixTime.current > 30_000) lastFixRef.current = null;
+    if (fixTime - lastRoadFixTime.current > 180_000) lastFixRef.current = null;
     lastRoadFixTime.current = fixTime;
     roadHitMetersRef.current = Math.min(12, Math.max(ROAD_HIT_METERS, me.accuracy ?? ROAD_HIT_METERS));
     const pt: [number, number] = [me.lat, me.lng];
@@ -823,7 +810,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         processPointRef.current(pt);
         return;
       }
-      if (d > 100) {
+      if (d > 250) {
         // A location jump is not evidence that the straight line was walked.
         traveledRef.current.push(pt);
         processPointRef.current(pt);
@@ -831,7 +818,19 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       }
       // Only bridge a short gap along one unambiguous mapped road. Never
       // interpolate a straight chord through side streets or parallel roads.
-      for (const s of roadGapPath(roadsRef.current.values(), last, pt)) {
+      const nearby = new Set<string>();
+      for (const endpoint of [last, pt]) {
+        const y = Math.floor(endpoint[0] / ROAD_INDEX_DEG);
+        const x = Math.floor(endpoint[1] / ROAD_INDEX_DEG);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          for (const id of roadSpatialRef.current.get(`${y+dy}:${x+dx}`) ?? []) nearby.add(id);
+        }
+      }
+      const nearbyRoads = [...nearby].flatMap(id => {
+        const road = roadsRef.current.get(id);
+        return road ? [road] : [];
+      });
+      for (const s of roadGapPath(nearbyRoads, last, pt)) {
         traveledRef.current.push(s);
         processPointRef.current(s);
       }

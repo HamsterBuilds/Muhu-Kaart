@@ -21,6 +21,10 @@ test("short gap follows road bend, not diagonal shortcut",()=>{
 test("reverse travel follows same road",()=>{
   assert.ok(roadGapPath([bend],[0.00029,0.0003],[0,0.00001]).length>10);
 });
+test("200 metre gap follows an unambiguous mapped road",()=>{
+  const road={id:"200m",coords:[[0,0],[0,0.001],[0,0.002]]};
+  assert.ok(roadGapPath([road],[0,0],[0,0.0018]).length >= 100);
+});
 test("parallel plausible roads do not produce guessed coverage",()=>{
   const a={id:"a",coords:[[0,0],[0,0.0005]]};
   const b={id:"b",coords:[[0.00002,0],[0.00002,0.0005]]};

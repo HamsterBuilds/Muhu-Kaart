@@ -28,7 +28,7 @@ export function roadGapPath(roads: Iterable<Road>, from: Point, to: Point): Poin
     const a = path[i - 1]!, b = path[i]!;
     const length = Math.hypot((b[0]-a[0])*111320, (b[1]-a[1])*111320*Math.cos(a[0]*Math.PI/180));
     total += length;
-    if (total > 100) return [];
+    if (total > 250) return [];
     const steps = Math.max(1, Math.ceil(length/2));
     for (let n = 1; n <= steps; n++) result.push([a[0]+(b[0]-a[0])*n/steps,a[1]+(b[1]-a[1])*n/steps]);
   }
