@@ -92,6 +92,10 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      if (new URL(request.url).pathname === "/api/admin/delete-tracks") {
+        const { deleteServerTracks } = await import("./lib/admin-tracks.server");
+        return await deleteServerTracks(request);
+      }
       if (new URL(request.url).pathname === "/api/roads") return await proxyRoads(request);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

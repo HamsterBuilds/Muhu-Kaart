@@ -16,6 +16,7 @@ import {
   LogOut,
 } from "lucide-react";
 import UpdateButton from "./UpdateButton";
+import DataSettings from "./DataSettings";
 import "./map-dashboard.css";
 
 type Props = {
@@ -186,6 +187,7 @@ export default function MapDashboard(p: Props) {
               <>
                 <p>{p.userName}</p>
                 <p>{p.syncStatus}</p>
+                <DataSettings tracking={p.tracking} />
                 <button className="map-logout" onClick={p.onLogout}>
                   <LogOut />
                   Logi välja
