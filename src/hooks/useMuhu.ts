@@ -77,27 +77,11 @@ export function useMuhuData(_code: string | null, groupId: string | null) {
  * veebis tavalise Geolocation watchPosition'iga. Tagastab ka trackingPos,
  * et kaart ja rohelised teed uuenevad ka siis, kui äpp pole aktiivselt ees.
  */
-export function useTracking(code: string | null) {
-  const qc = useQueryClient();
+export function useTracking(code: string | null, rememberCoverage: (point: [number, number]) => void) {
   const [trackId, setTrackId] = useState<string | null>(null);
   const [liveTrack, setLiveTrack] = useState<[number, number][]>([]);
   const [trackingPos, setTrackingPos] = useState<Position | null>(null);
-  type BufferedPoint = { id: string; lat: number; lng: number; t: string };
-  const buffer = useRef<BufferedPoint[]>([]);
   const last = useRef<Position | null>(null);
-  const trackIdRef = useRef<string | null>(null);
-  const pendingKey = "muhu-track-pending-v1";
-  const savePending = useCallback(() => {
-    if (typeof window === "undefined" || !trackIdRef.current) return;
-    localStorage.setItem(
-      pendingKey,
-      JSON.stringify({
-        userId: firebaseAuth.currentUser?.uid,
-        trackId: trackIdRef.current,
-        points: buffer.current,
-      }),
-    );
-  }, []);
 
   const handleFix = useCallback((lat: number, lng: number, accuracy?: number) => {
     const fix = usableFix(lat, lng, accuracy);
@@ -105,12 +89,11 @@ export function useTracking(code: string | null) {
     setTrackingPos(fix);
     if (last.current && distanceMeters(last.current, fix) < 2) return;
     last.current = fix;
-    const t = new Date().toISOString();
-    const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-    buffer.current.push({ ...fix, id: `${Date.now()}-${random}`, t });
-    savePending();
-    setLiveTrack((p) => [...p, [lat, lng] as [number, number]]);
-  }, [savePending]);
+    // One durable sample per spatial cell, never a new timestamp/random document
+    // for every lap. The map separately remembers canonical road geometry.
+    rememberCoverage([lat, lng]);
+    setLiveTrack((p) => [...p.slice(-1023), [lat, lng] as [number, number]]);
+  }, [rememberCoverage]);
 
   // Asukohavaatleja: Androidil BackgroundGeolocation (töötab taustal), mujal Geolocation
   useEffect(() => {
@@ -170,98 +153,28 @@ export function useTracking(code: string | null) {
     };
   }, [trackId, handleFix]);
 
-  // Puhvri loputus iga 15 s ja ka siis, kui äpp läheb taustale
-  useEffect(() => {
-    if (!trackId) return;
-    const flush = async () => {
-      const b = buffer.current;
-      if (!b.length) return;
-      buffer.current = [];
-      try {
-        await api.appendFirebaseTrackPoints(trackId, b);
-        // A new GPS fix may have arrived while this request was in flight.
-        // Never remove its local recovery copy together with the saved batch.
-        if (buffer.current.length) savePending();
-        else localStorage.removeItem(pendingKey);
-      } catch {
-        buffer.current = [...b, ...buffer.current];
-        savePending();
-      }
-    };
-    const timer = setInterval(flush, 15000);
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") void flush();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibility);
-      void flush();
-    };
-  }, [trackId, savePending]);
-
   const start = useCallback(async () => {
     if (!code) return;
-    const saved = typeof window === "undefined" ? null : localStorage.getItem(pendingKey);
-    let recoveredTrackId: string | null = null;
-    if (saved) {
-      try {
-        const pending = JSON.parse(saved) as {
-          userId?: string;
-          trackId?: string;
-          points?: Partial<BufferedPoint>[];
-        };
-        if (
-          pending.userId === firebaseAuth.currentUser?.uid &&
-          typeof pending.trackId === "string" &&
-          Array.isArray(pending.points)
-        ) {
-          recoveredTrackId = pending.trackId;
-          buffer.current = pending.points
-            .filter(
-              (p): p is Partial<BufferedPoint> & { lat: number; lng: number; t: string } =>
-                typeof p.lat === "number" && typeof p.lng === "number" && typeof p.t === "string",
-            )
-            .map((p, index) => ({
-              id: p.id ?? `recovered-${Date.parse(p.t) || Date.now()}-${index}`,
-              lat: p.lat,
-              lng: p.lng,
-              t: p.t,
-            }));
-        } else {
-          localStorage.removeItem(pendingKey);
+    // Preserve old pending trip data by importing it into deduplicated coverage.
+    try {
+      const saved = JSON.parse(localStorage.getItem("muhu-track-pending-v1") ?? "null");
+      if (saved?.userId === firebaseAuth.currentUser?.uid && Array.isArray(saved.points)) {
+        for (const p of saved.points) {
+          if (Number.isFinite(p.lat) && Number.isFinite(p.lng)) rememberCoverage([p.lat, p.lng]);
         }
-      } catch {
-        localStorage.removeItem(pendingKey);
       }
-    }
-    const nextTrackId = recoveredTrackId ?? (await api.startFirebaseTrack());
-    trackIdRef.current = nextTrackId;
-    setTrackId(nextTrackId);
+    } catch { /* Keep the legacy recovery copy untouched. */ }
+    setTrackId(code);
     last.current = null;
     setLiveTrack([]);
     toast.success(Capacitor.isNativePlatform() ? "Jälgimine käib – ka taustal" : "Jälgimine käib");
-  }, [code]);
+  }, [code, rememberCoverage]);
   const stop = useCallback(async () => {
-    if (!trackId) return;
-    const b = buffer.current;
-    buffer.current = [];
-    try {
-      if (b.length) await api.appendFirebaseTrackPoints(trackId, b);
-      await api.endFirebaseTrack(trackId);
-    } catch (error) {
-      buffer.current = [...b, ...buffer.current];
-      savePending();
-      toast.error("Raja salvestamine ebaõnnestus – proovin uuesti");
-      return;
-    }
     setTrackId(null);
-    trackIdRef.current = null;
-    if (typeof window !== "undefined") localStorage.removeItem(pendingKey);
     setLiveTrack([]);
-    void qc.invalidateQueries({ queryKey: ["tracks"] });
+    // useRoadCoverage owns the durable retry queue even after tracking stops.
     toast.success("Jälgimine lõpetatud");
-  }, [trackId, qc, savePending]);
+  }, []);
   return { tracking: !!trackId, liveTrack, trackingPos, start, stop };
 }
 export function usePointActions(_code: string | null, groupId: string | null) {

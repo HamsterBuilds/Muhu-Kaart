@@ -110,3 +110,27 @@ test("cloud history uses only owner filter and sorts locally without a composite
   assert.equal(result[0].coverage, true);
   assert.equal(result[0].points[0][0], 58.6);
 });
+
+test("10,000 repeat passes after reload do not grow saved road geometry or requeue uploads", () => {
+  const storage = new Map();
+  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201 };
+  mount(storage, "alice").hook.rememberCoverage([58.6, 23.2], segment);
+  const saved = JSON.parse(storage.get("muhu-road-coverage-v1:alice"));
+  saved.pending = {};
+  storage.set("muhu-road-coverage-v1:alice", JSON.stringify(saved));
+  const before = storage.get("muhu-road-coverage-v1:alice");
+  const { hook } = mount(storage, "alice");
+  for (let i = 0; i < 10000; i++) {
+    hook.rememberCoverage([58.6 + (i % 100) * 0.000001, 23.2], i % 2 ? segment : {
+      aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng,
+    });
+  }
+  assert.equal(storage.get("muhu-road-coverage-v1:alice"), before);
+});
+
+test("tracking saves through deduplicated coverage, not per-trip GPS documents", () => {
+  const tracking = readFileSync(new URL("../src/hooks/useMuhu.ts", import.meta.url), "utf8")
+    .split("export function useTracking")[1].split("export function usePointActions")[0];
+  assert.doesNotMatch(tracking, /startFirebaseTrack|appendFirebaseTrackPoints|randomUUID/);
+  assert.match(tracking, /rememberCoverage\(\[lat, lng\]\)/);
+});

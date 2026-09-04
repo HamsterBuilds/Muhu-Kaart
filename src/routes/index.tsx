@@ -79,8 +79,8 @@ function MuhuApp() {
 
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
-  const { tracking, liveTrack, trackingPos, start, stop } = useTracking(code);
   const { localCoverage, coverageSegments, rememberCoverage, coverageOwner, syncStatus } = useRoadCoverage(tracksQuery.data);
+  const { tracking, liveTrack, trackingPos, start, stop } = useTracking(code, rememberCoverage);
   const { add, remove, setVisited, update } = usePointActions(code, groupId);
 
   // Jälgimise ajal uueneb asukoht ka taustal (BackgroundGeolocation)

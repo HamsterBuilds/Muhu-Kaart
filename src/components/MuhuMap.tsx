@@ -108,7 +108,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const abortAllRef = useRef<AbortController>(new AbortController());
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roadChunkPolysRef = useRef<LeafletPolyline[]>([]);
-  const roadWeightRef = useRef(4);
+  const roadWeightRef = useRef(6);
   const corridorRef = useRef<[number, number] | null>(null);
   const corridorFetchRef = useRef<(pt: [number, number]) => void>(() => {});
   const processPointRef = useRef<(pt: [number, number]) => void>(() => {});
@@ -271,7 +271,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       };
       mapRef.current = map;
       const vectorLines = new Map<string, LeafletPolyline>();
-      const vectorWeight = () => (map.getZoom() >= 17 ? 2.4 : map.getZoom() >= 15 ? 2 : 1.5);
+      const vectorWeight = () => 6;
       vectorRoadRenderRef.current = (key, lines) => {
         vectorLines.get(key)?.remove();
         if (!lines.length) return;
@@ -388,10 +388,9 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       // lähedusindeksi vastuvõtja olemas. See on oluline esimesel GPS-fixil.
       redRoadTiles.redraw();
 
-      // Joonetihedus sõltub suumist – lähemal on jooned paksemad ja detailsemad
+      // Keep all road sources as thick as saved green coverage at every zoom.
       const applyRoadWidth = () => {
-        const z = map.getZoom();
-        const w = z >= 17 ? 6 : z >= 15 ? 5 : 4;
+        const w = 6;
         if (w === roadWeightRef.current) return;
         roadWeightRef.current = w;
         for (const poly of roadChunkPolysRef.current) poly.setStyle({ weight: w });
