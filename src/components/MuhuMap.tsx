@@ -81,7 +81,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   coverageCallback.current = onCoverage;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const miniatureRef = useRef<HTMLDivElement | null>(null);
-  const [showBuildingDepth, setShowBuildingDepth] = useState(true);
+  const [showBuildingDepth, setShowBuildingDepth] = useState(false);
+  const depthRef = useRef<ReturnType<typeof createBuildingDepthLayer> | null>(null);
   const [lightMap, setLightMap] = useState(false);
   const lastRoadFixTime = useRef(0);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -154,6 +155,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       // Ühine canvas-renderdaja polstriga: jooned ei lõigataks vaate äärtel ära
       // ja suur maht renderdatakse sujuvalt ühel lõuendil
       buildingDepth = createBuildingDepthLayer(L, map);
+      depthRef.current = buildingDepth;
       if (miniatureRef.current) {
         miniature = L.map(miniatureRef.current, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false });
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19}).addTo(miniature);
@@ -614,6 +616,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       roRef.current = null;
       if (sizeTimer) clearTimeout(sizeTimer);
       buildingDepth?.destroy();
+      depthRef.current = null;
       miniature?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
@@ -840,6 +843,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     processPointRef.current(pt);
   }, [me, mapReady]);
 
+  useEffect(() => {
+    depthRef.current?.setEnabled(showBuildingDepth && !lightMap);
+  }, [showBuildingDepth, lightMap, mapReady]);
+
   const locateMe = () => {
     const map = mapRef.current;
     const p = lastFixRef.current;
@@ -859,8 +866,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           <button type="button" aria-label="Hoonete ruumiline vaade" aria-pressed={showBuildingDepth} onClick={() => {
             const next = !showBuildingDepth;
             setShowBuildingDepth(next);
-            const pane = mapRef.current?.getPane("building-depth");
-            if (pane) pane.style.display = next ? "" : "none";
           }}><MapIcon /></button>
           <button type="button" aria-label="Kuva minu asukoht" onClick={locateMe}><Navigation /></button>
         </div>

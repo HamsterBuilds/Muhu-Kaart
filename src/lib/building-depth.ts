@@ -15,11 +15,13 @@ export function createBuildingDepthLayer(L: typeof Leaflet, map: Leaflet.Map) {
   const woodland = new Map<string, Ring[]>();
   let frame = 0;
   let destroyed = false;
+  let enabled = false;
+  pane.style.display = "none";
   const render = () => {
     frame = 0;
-    if (destroyed) return;
+    if (destroyed || !enabled) return;
     const size = map.getSize();
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = 1;
     canvas.width = size.x * ratio;
     canvas.height = size.y * ratio;
     canvas.style.width = `${size.x}px`;
@@ -118,12 +120,21 @@ export function createBuildingDepthLayer(L: typeof Leaflet, map: Leaflet.Map) {
     }
   };
   const schedule = () => {
-    if (!frame && !destroyed) frame = requestAnimationFrame(render);
+    if (enabled && !frame && !destroyed) frame = requestAnimationFrame(render);
   };
   // Leaflet moves the existing pane while panning. Rebuild expensive geometry
   // only after the gesture, not on every animation frame.
   map.on("moveend zoomend resize", schedule);
   return {
+    setEnabled(value: boolean) {
+      enabled = value;
+      pane.style.display = value ? "" : "none";
+      if (!value) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        canvas.width = canvas.height = 0;
+      } else schedule();
+    },
     setWoodland(key: string, rings: Ring[]) { if (!destroyed) { woodland.set(key, rings); schedule(); } },
     setTile(key: string, rings: Ring[], labels: Address[] = []) {
       if (!destroyed) {

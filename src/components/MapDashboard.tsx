@@ -103,6 +103,7 @@ export default function MapDashboard(p: Props) {
             <ChevronRight className="identity-chevron" />
           </button>
           <div className="map-header-actions">
+            <UpdateButton />
             <button onClick={p.onGroups}>
               <Users />
               Grupid
@@ -185,7 +186,6 @@ export default function MapDashboard(p: Props) {
               <>
                 <p>{p.userName}</p>
                 <p>{p.syncStatus}</p>
-                <UpdateButton />
                 <button className="map-logout" onClick={p.onLogout}>
                   <LogOut />
                   Logi välja
