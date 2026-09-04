@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Browser } from "@capacitor/browser";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { toast } from "sonner";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/HamsterBuilds/Muhu-Kaart/releases/latest";
 const CURRENT_BUILD = Number(import.meta.env["VITE_APP_BUILD_NUMBER"] ?? 0);
+const AppUpdater = registerPlugin<{ install(options: { url: string }): Promise<void> }>("AppUpdater");
 
 type AvailableUpdate = { build: number; downloadUrl: string };
 
@@ -14,6 +15,7 @@ async function findUpdate(): Promise<AvailableUpdate | null> {
   const response = await fetch(`${LATEST_RELEASE_URL}?t=${Date.now()}`, {
     headers: { Accept: "application/vnd.github+json" },
     cache: "no-store",
+    signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) throw new Error("Uuendust ei saanud kontrollida");
 
@@ -60,8 +62,12 @@ export default function UpdateButton({ className = "" }: { className?: string })
       onClick={async () => {
         setOpening(true);
         try {
-          await Browser.open({ url: update.downloadUrl });
-          toast.info("Laadi APK alla ja kinnita Androidi paigaldus");
+          if (Capacitor.getPlatform() === "android") {
+            await AppUpdater.install({ url: update.downloadUrl });
+            toast.info("Kinnita Androidi paigaldus. Kui lubasid paigaldamise esimest korda, vajuta uuesti Update.");
+          } else {
+            await Browser.open({ url: update.downloadUrl });
+          }
         } catch (error) {
           toast.error(error instanceof Error ? error.message : "Uuenduse avamine ebaõnnestus");
         } finally {
@@ -71,7 +77,7 @@ export default function UpdateButton({ className = "" }: { className?: string })
       className={`rounded-xl bg-[#2f9e7f] px-3 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-60 ${className}`}
       aria-label={`Paigalda uuendus ${update.build}`}
     >
-      {opening ? "Avan..." : "Update"}
+      {opening ? "Laadin uuendust..." : "Update"}
     </button>
   );
 }

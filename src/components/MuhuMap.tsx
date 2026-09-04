@@ -197,8 +197,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                 for (let i = 0; i < streets.length; i++) {
                   const feature = streets.feature(i);
                   if (feature.type !== 2) continue;
-                  const kind = String(feature.properties.kind ?? "");
-                  if (/footway|path|cycleway|steps|pedestrian/.test(kind)) continue;
+                  // Include sidewalks, paths, cycleways and steps as continuous
+                  // coverable roads, regardless of the base map's dashed style.
                   const scale = size / streets.extent;
                   const geometry = feature.loadGeometry();
                   for (let lineIndex = 0; lineIndex < geometry.length; lineIndex++) {
