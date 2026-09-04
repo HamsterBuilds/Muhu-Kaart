@@ -59,3 +59,11 @@ test("walk connectors are traversable but remain excluded from the red car-road 
   assert.equal(roads.isMotorRoad({kind:"service", motorcar:"no"}), false);
   assert.equal(roads.isMotorRoad({kind:"primary", rail:true}), false);
 });
+
+test("one GPS sample colors only a short slice of a long mapped segment", () => {
+  const a=[0,0], b=[0,0.01];
+  const clipped=roads.clippedSegmentAtPoint([0,0.005],a,b);
+  const length=Math.abs(clipped.b[1]-clipped.a[1])*111320;
+  assert.ok(length >= 4.9 && length <= 5.1);
+  assert.ok(clipped.a[1] > 0.0049 && clipped.b[1] < 0.0051);
+});

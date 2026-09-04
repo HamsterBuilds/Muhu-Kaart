@@ -207,3 +207,21 @@ export function segmentDistanceMeters(
   if (t > 1) t = 1;
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
+
+/** Return only the short portion proven by this GPS sample, never the entire
+ * potentially hundreds-of-metres-long map segment. */
+export function clippedSegmentAtPoint(
+  pt: [number, number], a: [number, number], b: [number, number], radiusMeters = 2.5,
+): { a: [number, number]; b: [number, number] } {
+  const latRef = ((a[0] + b[0]) / 2) * Math.PI / 180;
+  const dx = (b[1] - a[1]) * 111_320 * Math.cos(latRef);
+  const dy = (b[0] - a[0]) * 110_540;
+  const length = Math.hypot(dx, dy);
+  if (!length) return { a, b };
+  const px = (pt[1] - a[1]) * 111_320 * Math.cos(latRef);
+  const py = (pt[0] - a[0]) * 110_540;
+  const t = Math.max(0, Math.min(1, (px * dx + py * dy) / (length * length)));
+  const delta = radiusMeters / length;
+  const at = (n: number): [number, number] => [a[0] + (b[0] - a[0]) * n, a[1] + (b[1] - a[1]) * n];
+  return { a: at(Math.max(0, t - delta)), b: at(Math.min(1, t + delta)) };
+}

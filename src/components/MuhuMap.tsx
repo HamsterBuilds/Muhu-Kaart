@@ -25,6 +25,7 @@ import {
   modeForZoom,
   roadBBox,
   segmentDistanceMeters,
+  clippedSegmentAtPoint,
   isMotorRoad,
   isTraversableRoad,
   type Cell,
@@ -125,6 +126,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const processPointRef = useRef<(pt: [number, number], allowConnector?: boolean) => void>(() => {});
   const gapPathRef = useRef<(from: [number, number], to: [number, number]) => [number, number][]>(() => []);
   const rawFixesRef = useRef<[number, number][]>([]);
+  const matchAnchorRef = useRef<[number, number] | null>(null);
   const tracksRef = useRef(tracks);
   tracksRef.current = tracks;
   const vectorRoadSinkRef = useRef<(roads: Road[]) => void>(() => {});
@@ -406,9 +408,11 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           }
         }
         // An uncertain fix between neighbouring roads is not proof of a visit.
-        if (nearest && (nearest.motorRoad || allowConnector) && nearestDistance <= roadHitMetersRef.current && secondDistance - nearestDistance >= 1.5) {
+        const hitLimit = nearest?.motorRoad ? roadHitMetersRef.current : Math.min(5, roadHitMetersRef.current);
+        if (nearest && (nearest.motorRoad || allowConnector) && nearestDistance <= hitLimit && secondDistance - nearestDistance >= 1.5) {
           const { a, b, motorRoad } = nearest;
-          coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1], motorRoad, traversableRoad: true, coverageVersion: 3 });
+          const clipped = clippedSegmentAtPoint(pt, a, b);
+          coverageCallback.current(pt, { aLat: clipped.a[0], aLng: clipped.a[1], bLat: clipped.b[0], bLng: clipped.b[1], motorRoad, traversableRoad: true, coverageVersion: 4 });
         }
       };
       processPointRef.current = processPoint;
@@ -684,6 +688,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       savedCoverageRef.current.clear();
       savedCoverageSpatialRef.current.clear();
       rawFixesRef.current = [];
+      matchAnchorRef.current = null;
       cellStateStore.clear();
       firstFixDoneRef.current = false;
     };
@@ -831,6 +836,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     if (!Number.isFinite(me.lat) || !Number.isFinite(me.lng) || (me.accuracy ?? 0) > 20) {
       lastFixRef.current = null;
       rawFixesRef.current = [];
+      matchAnchorRef.current = null;
       lastRoadFixTime.current = 0;
       return;
     }
@@ -838,6 +844,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     if (fixTime - lastRoadFixTime.current > 180_000) {
       lastFixRef.current = null;
       rawFixesRef.current = [];
+      matchAnchorRef.current = null;
     }
     lastRoadFixTime.current = fixTime;
     roadHitMetersRef.current = Math.min(12, Math.max(ROAD_HIT_METERS, me.accuracy ?? ROAD_HIT_METERS));
@@ -860,7 +867,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       corridorRef.current = pt;
       corridorFetchRef.current(pt);
     }
-    const last = lastFixRef.current;
+    const last = matchAnchorRef.current;
     lastFixRef.current = pt;
     const lastIndexed = lastVectorIndexFixRef.current;
     if (
@@ -873,13 +880,13 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     if (last) {
       const d = distanceMeters({ lat: last[0], lng: last[1] }, { lat: pt[0], lng: pt[1] });
       if (d < 3) {
-        // Üksik GPS-fiks ei tõesta tee läbimist. Kinnita see ainult siis, kui
-        // kaks järjestikust fikksi sobivad samale kaarditeele.
-        for (const s of gapPathRef.current(last, pt)) processPointRef.current(s, true);
+        // Accumulate movement against the last accepted anchor. GPS jitter
+        // while stationary must not create coverage.
         return;
       }
       if (d > 250) {
         // A location jump is not evidence that the straight line was walked.
+        matchAnchorRef.current = pt;
         return;
       }
       // Only bridge a short gap along one unambiguous mapped road. Never
@@ -887,8 +894,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       for (const s of gapPathRef.current(last, pt)) {
         processPointRef.current(s, true);
       }
+      matchAnchorRef.current = pt;
       return;
     }
+    matchAnchorRef.current = pt;
   }, [me, mapReady]);
 
   useEffect(() => {

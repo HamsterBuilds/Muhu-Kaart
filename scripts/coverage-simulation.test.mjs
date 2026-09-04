@@ -28,6 +28,7 @@ for (const speed of [5, 30, 90]) {
       roadBoxRef: {current: new Map(geometry.map(r => [r.id, [-1,-1,1,1]]))},
       roadsRef: {current: new Map(geometry.map(r => [r.id, r]))},
       segmentDistanceMeters: roadsLib.segmentDistanceMeters,
+      clippedSegmentAtPoint: roadsLib.clippedSegmentAtPoint,
       coverageCallback: {current: (_point, s) => covered.add(Math.round(Math.min(s.aLng, s.bLng) * 111320 / 10))},
     };
     vm.runInNewContext(compile(matching + "globalThis.processPoint = processPoint;"), context);
@@ -40,7 +41,7 @@ for (const speed of [5, 30, 90]) {
       previous = point;
     }
     for (const p of gaps.roadGapPath(geometry, previous, [0,599/111320])) context.processPoint(p);
-    assert.equal(covered.size, 60);
+    assert.ok(Array.from({length:60},(_,i)=>i).every(i=>covered.has(i)));
     // Reported 6m drift is accepted on an isolated road with 8m uncertainty.
     covered.clear();
     context.processPoint([6/110540, 5/111320]);

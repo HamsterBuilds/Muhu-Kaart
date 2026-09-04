@@ -11,7 +11,7 @@ type Store = { points: Record<string, Point>; pending: Record<string, Point> };
 const key = (uid: string) => `muhu-road-coverage-v1:${uid}`;
 const pointId = (lat: number, lng: number) => `${Math.round(lat / 0.000045)}_${Math.round(lng / 0.00008)}`;
 const segmentId = (s: CoverageSegment) => `segment_${[`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_")}`;
-const validSegment = (s: CoverageSegment | undefined): s is CoverageSegment => !!s && s.coverageVersion === 3 && s.traversableRoad === true && [s.aLat, s.aLng, s.bLat, s.bLng].every(Number.isFinite);
+const validSegment = (s: CoverageSegment | undefined): s is CoverageSegment => !!s && s.coverageVersion === 4 && s.traversableRoad === true && [s.aLat, s.aLng, s.bLat, s.bLng].every(Number.isFinite);
 const rawTracks = (data: Store) => {
   const points = Object.values(data.points).filter((p) => !p.segment && p.verifiedTime).sort((a, b) => a.t.localeCompare(b.t));
   const tracks: [number, number][][] = [];

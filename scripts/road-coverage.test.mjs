@@ -58,6 +58,7 @@ test("live matching marks only the nearest road, not parallel neighbours", () =>
     roadBoxRef:{current:new Map([...roads.keys()].map(id=>[id,[-1,-1,1,1]]))},
     roadsRef:{current:roads}, roadHitMetersRef:{current:12},
     segmentDistanceMeters:(pt,a)=>Math.abs(pt[0]-a[0])*111320,
+    clippedSegmentAtPoint:(pt,a,b)=>({a,b}),
     coverageCallback:{current:(_pt,segment)=>marked.push(segment)},
   };
   vm.runInNewContext(ts.transpileModule(body + "processPoint([0,0.5]);", {
@@ -144,6 +145,7 @@ test("a walk connector is green only when confirmed by consecutive movement", ()
     ROAD_INDEX_DEG:1, roadSpatialRef:{current:new Map([["0:0",new Set(["walk"])]])},
     roadBoxRef:{current:new Map([["walk",[-1,-1,1,1]]])}, roadsRef:{current:new Map([["walk",road]])},
     roadHitMetersRef:{current:8}, segmentDistanceMeters:()=>1,
+    clippedSegmentAtPoint:(_pt,a,b)=>({a,b}),
     coverageCallback:{current:(_pt,segment)=>marked.push(segment)},
   };
   vm.runInNewContext(ts.transpileModule(body + "processPoint([0,0.0002]); processPoint([0,0.0003], true);", {
@@ -151,7 +153,7 @@ test("a walk connector is green only when confirmed by consecutive movement", ()
   }).outputText, context);
   assert.equal(marked.length,1);
   assert.equal(marked[0].motorRoad,false);
-  assert.equal(marked[0].coverageVersion,3);
+  assert.equal(marked[0].coverageVersion,4);
 });
 
 test("one isolated GPS fix cannot color a road", () => {
@@ -178,7 +180,7 @@ test("legacy unclassified coverage is retained but only car-road revalidation ma
   const app = mount(storage, "alice");
   assert.equal(app.states[1].length, 0);
   assert.equal(app.states[3].length, 0);
-  app.hook.rememberCoverage([58.6,23.2], {...segment, motorRoad:true, traversableRoad:true, coverageVersion:3});
+  app.hook.rememberCoverage([58.6,23.2], {...segment, motorRoad:true, traversableRoad:true, coverageVersion:4});
   assert.equal(app.states[3].length, 1);
   const saved = JSON.parse(storage.get("muhu-road-coverage-v1:alice"));
   assert.equal(Object.keys(saved.points).length, 1);
@@ -210,10 +212,10 @@ test("acknowledged local coverage remains visible with an empty upload queue", (
 
 test("road geometry survives reload without GPS or road downloads and reverse visits deduplicate", () => {
   const storage = new Map();
-  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201, motorRoad: true, traversableRoad: true, coverageVersion: 3 };
+  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201, motorRoad: true, traversableRoad: true, coverageVersion: 4 };
   const first = mount(storage, "alice");
   first.hook.rememberCoverage([58.6, 23.2], segment);
-  first.hook.rememberCoverage([58.601, 23.201], { aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng, motorRoad: true, traversableRoad: true, coverageVersion: 3 });
+  first.hook.rememberCoverage([58.601, 23.201], { aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng, motorRoad: true, traversableRoad: true, coverageVersion: 4 });
   const restored = mount(storage, "alice");
   assert.equal(restored.states[3].length, 1);
   assert.equal(restored.states[3][0].bLng, 23.201);
@@ -261,7 +263,7 @@ test("cloud history uses only owner filter and sorts locally without a composite
 
 test("10,000 repeat passes after reload do not grow saved road geometry or requeue uploads", () => {
   const storage = new Map();
-  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201, motorRoad: true, traversableRoad: true, coverageVersion: 3 };
+  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201, motorRoad: true, traversableRoad: true, coverageVersion: 4 };
   mount(storage, "alice").hook.rememberCoverage([58.6, 23.2], segment);
   const saved = JSON.parse(storage.get("muhu-road-coverage-v1:alice"));
   saved.pending = {};
@@ -272,7 +274,7 @@ test("10,000 repeat passes after reload do not grow saved road geometry or reque
     hook.rememberCoverage([58.6 + (i % 100) * 0.000001, 23.2], i % 2 ? segment : {
       aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng,
       motorRoad: true,
-      traversableRoad: true, coverageVersion: 3,
+      traversableRoad: true, coverageVersion: 4,
     });
   }
   assert.equal(storage.get("muhu-road-coverage-v1:alice"), before);
