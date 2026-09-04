@@ -6,7 +6,6 @@ import type {
   Canvas as LeafletCanvas,
 } from "leaflet";
 import { Crosshair } from "lucide-react";
-import { createBuildingDepthLayer } from "@/lib/building-depth";
 import { VectorTile } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
 import "leaflet/dist/leaflet.css";
@@ -45,7 +44,7 @@ const SHOPS: { name: string; lat: number; lng: number }[] = [
 ];
 
 const ROAD_COLOR = "#d9453c";
-const TRAVELED_COLOR = "#16f6a0";
+const TRAVELED_COLOR = "#2f9e7f";
 /** The displayed road match remains precise; GPS accuracy can widen candidate lookup. */
 const ROAD_HIT_METERS = 3;
 const MAX_BATCH_CELLS = 12;
@@ -125,7 +124,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
 
   useEffect(() => {
     let cancelled = false;
-    let buildingDepth: ReturnType<typeof createBuildingDepthLayer> | undefined;
     let sizeTimer: ReturnType<typeof setTimeout> | null = null;
     const roadStore = roadsRef.current;
     const roadBoxStore = roadBoxRef.current;
@@ -147,7 +145,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
 
       // Ühine canvas-renderdaja polstriga: jooned ei lõigataks vaate äärtel ära
       // ja suur maht renderdatakse sujuvalt ühel lõuendil
-      buildingDepth = createBuildingDepthLayer(L, map);
       const lineRenderer = L.canvas({ padding: 0.5 });
       lineRendererRef.current = lineRenderer;
       const coveragePane = map.createPane("saved-road-coverage");
@@ -180,43 +177,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             })
             .then((data) => {
               const tile = new VectorTile(new PbfReader(new Uint8Array(data)));
-              const land = tile.layers.land;
-              if (land) {
-                const woods: [number, number][][] = [];
-                for (let i = 0; i < land.length; i++) {
-                  const feature = land.feature(i);
-                  if (feature.type !== 3 || feature.properties.kind !== "forest") continue;
-                  for (const ring of feature.loadGeometry()) woods.push(ring.map(point => {
-                    const p = map.unproject(L.point(coords.x * size + point.x * size / land.extent, coords.y * size + point.y * size / land.extent), coords.z);
-                    return [p.lat, p.lng];
-                  }));
-                }
-                buildingDepth?.setWoodland(`${coords.z}:${coords.x}:${coords.y}`, woods);
-              }
-              const buildings = tile.layers.buildings;
-              if (buildings) {
-                const rings: [number, number][][] = [];
-                for (let i = 0; i < buildings.length; i++) {
-                  const feature = buildings.feature(i);
-                  if (feature.type !== 3) continue;
-                  for (const ring of feature.loadGeometry()) {
-                    rings.push(ring.map(point => {
-                      const p = map.unproject(L.point(coords.x * size + point.x * size / buildings.extent, coords.y * size + point.y * size / buildings.extent), coords.z);
-                      return [p.lat, p.lng];
-                    }));
-                  }
-                }
-                const labels: { point: [number, number]; text: string }[] = [];
-                const addresses = tile.layers.addresses;
-                if (addresses) for (let i = 0; i < addresses.length; i++) {
-                  const feature = addresses.feature(i);
-                  const point = feature.loadGeometry()[0]?.[0];
-                  if (!point || !feature.properties.housenumber) continue;
-                  const p = map.unproject(L.point(coords.x * size + point.x * size / addresses.extent, coords.y * size + point.y * size / addresses.extent), coords.z);
-                  labels.push({ point: [p.lat, p.lng], text: String(feature.properties.housenumber) });
-                }
-                buildingDepth?.setTile(`${coords.z}:${coords.x}:${coords.y}`, rings, labels);
-              }
               const streets = tile.layers.streets;
               if (streets) {
                 const tileCenter = map.unproject(L.point((coords.x + 0.5) * size, (coords.y + 0.5) * size), coords.z);
@@ -291,7 +251,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         updateWhenZooming: false,
       }).on("tileunload", (event: { coords: { x: number; y: number; z: number } }) => {
         vectorRoadRemoveRef.current(`${event.coords.z}:${event.coords.x}:${event.coords.y}`);
-        buildingDepth?.removeTile(`${event.coords.z}:${event.coords.x}:${event.coords.y}`);
       }).addTo(map);
       vectorRoadRefreshRef.current = () => redRoadTiles.redraw();
       // GPS võib jõuda enne Leafleti kaardi initsialiseerimist. Sel juhul tuleb
@@ -551,7 +510,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       // Sünkroniseeri juba saabunud asukohad pärast kaardi valmimist
       for (const pt of traveledRef.current) processPoint(pt);
       if (lastFixRef.current && !interactedRef.current) {
-        map.setView(lastFixRef.current, Math.max(map.getZoom(), 17));
+        map.setView(lastFixRef.current, Math.max(map.getZoom(), 15));
       }
 
       // Leaflet mõõdab konteineri kohe – hoia suurus paigas ka pärast layouti muutust
@@ -587,7 +546,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       roRef.current?.disconnect();
       roRef.current = null;
       if (sizeTimer) clearTimeout(sizeTimer);
-      buildingDepth?.destroy();
       mapRef.current?.remove();
       mapRef.current = null;
       lineRendererRef.current = null;
@@ -702,7 +660,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         }
         const largest = [...clusters.values()].sort((a, b) => b.length - a.length)[0]!;
         mapRef.current.fitBounds(largest, { padding: [40, 40], maxZoom: 18 });
-        mapRef.current.setZoom(Math.max(17, mapRef.current.getZoom()));
       }
       vectorRoadRefreshRef.current();
     }
@@ -749,7 +706,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     if (map && !firstFixDoneRef.current) {
       firstFixDoneRef.current = true;
       if (!interactedRef.current) {
-        map.setView(pt, Math.max(map.getZoom(), 17));
+        map.setView(pt, Math.max(map.getZoom(), 15));
       }
     }
     // Laadi teed ümber kasutaja asukoha, isegi kui vaade on mujal või äpp taustal
@@ -812,7 +769,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const locateMe = () => {
     const map = mapRef.current;
     const p = lastFixRef.current;
-    if (map && p) map.setView(p, Math.max(map.getZoom(), 17));
+    if (map && p) map.setView(p, Math.max(map.getZoom(), 15));
   };
 
   return (
@@ -827,7 +784,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         type="button"
         onClick={locateMe}
         aria-label="Kuva minu asukoht"
-        className="map-locate"
+        className="absolute bottom-28 right-3 z-[600] flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card/95 text-foreground shadow-lg backdrop-blur"
       >
         <Crosshair className="h-5 w-5" />
       </button>
