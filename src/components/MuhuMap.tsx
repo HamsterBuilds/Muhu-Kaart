@@ -84,7 +84,6 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     roads?: LayerGroup;
     traveled?: LayerGroup;
     points?: LayerGroup;
-    tracks?: LayerGroup;
     me?: LayerGroup;
   }>({});
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
@@ -250,13 +249,11 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
 
       const roadsLayer = L.layerGroup().addTo(map);
       const traveledLayer = L.layerGroup().addTo(map);
-      const tracksLayer = L.layerGroup().addTo(map);
       const pointsLayer = L.layerGroup().addTo(map);
       const meLayer = L.layerGroup().addTo(map);
       layersRef.current = {
         roads: roadsLayer,
         traveled: traveledLayer,
-        tracks: tracksLayer,
         points: pointsLayer,
         me: meLayer,
       };
@@ -605,33 +602,8 @@ export default function MuhuMap({ points, tracks, me, onSelect }: Props) {
     }
   }, [points, mapReady]);
 
-  useEffect(() => {
-    const L = leafletRef.current;
-    const layer = layersRef.current.tracks;
-    const renderer = lineRendererRef.current;
-    if (!L || !layer || !renderer) return;
-    layer.clearLayers();
-    for (const t of tracks) {
-      if (t.length < 2) continue;
-      L.polyline(t, {
-        color: "#4361ee",
-        weight: 6,
-        opacity: 0.22,
-        lineCap: "round",
-        lineJoin: "round",
-        renderer,
-      }).addTo(layer);
-      L.polyline(t, {
-        color: "#4361ee",
-        weight: 2.5,
-        opacity: 0.9,
-        lineCap: "round",
-        lineJoin: "round",
-        renderer,
-      }).addTo(layer);
-    }
-  }, [tracks, mapReady]);
-
+  // GPS tracks are coverage input only, never a separate blue route overlay.
+  // Both live and saved points color the existing road geometry below.
   // Taasta kogu kasutaja läbitud teede katvus Firestore'ist. Punktid
   // tihendatakse ~5 m ruudustikku, seega sama tee korduv läbimine ei kasvata
   // töömahtu ega tekita kattuvaid rohelisi kihte.
