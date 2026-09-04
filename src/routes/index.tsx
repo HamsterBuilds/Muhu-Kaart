@@ -86,7 +86,7 @@ function MuhuApp() {
   const { add, remove, setVisited, update } = usePointActions(code, groupId);
 
   // Jälgimise ajal uueneb asukoht ka taustal (BackgroundGeolocation)
-  const me = trackingPos ?? pos;
+  const me = tracking ? trackingPos ?? pos : pos;
 
   const points = pointsQuery.data ?? [];
   const visitedCount = points.filter((p) => p.visited || p.mine).length;

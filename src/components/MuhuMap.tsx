@@ -771,13 +771,15 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         processPointRef.current(pt);
         return;
       }
-      if (d <= 60) {
+      if (d > 100) {
+        // A location jump is not evidence that the straight line was walked.
         traveledRef.current.push(pt);
         processPointRef.current(pt);
         return;
       }
-      // suur hüpe: interpoleeri sirgjoonel tihedalt, et 2 m raadius tabaks kõik teed
-      const steps = Math.min(Math.ceil(d / 8), 80);
+      // Sample every ordinary movement too: short segments between GPS fixes
+      // otherwise remain red even though the user passed over them.
+      const steps = Math.ceil(d / 2);
       for (let i = 1; i <= steps; i++) {
         const f = i / steps;
         const s: [number, number] = [
@@ -791,7 +793,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     }
     traveledRef.current.push(pt);
     processPointRef.current(pt);
-  }, [me]);
+  }, [me, mapReady]);
 
   const locateMe = () => {
     const map = mapRef.current;

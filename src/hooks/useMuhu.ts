@@ -179,13 +179,15 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
       }
     } catch { /* Keep the legacy recovery copy untouched. */ }
     setTrackId(code);
+    setTrackingPos(null);
     if (activeTrackingKey) localStorage.setItem(activeTrackingKey, "1");
     last.current = null;
     setLiveTrack([]);
     toast.success(Capacitor.isNativePlatform() ? "Jälgimine käib – ka taustal" : "Jälgimine käib");
-  }, [code, rememberCoverage]);
+  }, [code, rememberCoverage, activeTrackingKey]);
   const stop = useCallback(async () => {
     setTrackId(null);
+    setTrackingPos(null);
     if (activeTrackingKey) localStorage.removeItem(activeTrackingKey);
     setLiveTrack([]);
     // useRoadCoverage owns the durable retry queue even after tracking stops.

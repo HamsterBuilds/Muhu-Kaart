@@ -4,6 +4,26 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
+test("APK obtains road geometry through native HTTP without a localhost server", async () => {
+  const exports = {};
+  const calls = [];
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../src/lib/roads.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    exports, URLSearchParams, DOMException,
+    require: () => ({ Capacitor: { isNativePlatform: () => true }, CapacitorHttp: { post: async (options) => {
+      calls.push(options);
+      return { status: 200, data: { elements: [{ type: "way", id: 42, geometry: [{lat:59,lon:24},{lat:59.001,lon:24.001}] }] } };
+    } } }),
+    fetch: () => { throw new Error("APK must not depend on the web-only proxy"); },
+  });
+  const roads = await exports.fetchRoadsForCells([{ key: "test", bbox: {south:59,west:24,north:59.01,east:24.01} }]);
+  assert.equal(roads.length, 1);
+  assert.equal(roads[0].id, "42");
+  assert.equal(calls[0].url, "https://overpass-api.de/api/interpreter");
+  assert.match(calls[0].data, /data=/);
+});
+
 const source = ts.transpileModule(readFileSync(new URL("../src/hooks/useRoadCoverage.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
