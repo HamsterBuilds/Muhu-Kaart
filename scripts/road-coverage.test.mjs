@@ -25,7 +25,7 @@ function mount(storage, uid) {
         useRef: (value) => ({ current: value }),
         useState: (value) => {
           const index = states.push(value) - 1;
-          return [value, (next) => { states[index] = next; }];
+          return [value, (next) => { states[index] = typeof next === "function" ? next(states[index]) : next; }];
         },
       };
       if (name === "firebase/auth") return { onAuthStateChanged: (_, cb) => { cb(auth.currentUser); return () => {}; } };
@@ -58,6 +58,20 @@ test("acknowledged local coverage remains visible with an empty upload queue", (
   saved.pending = {};
   storage.set("muhu-road-coverage-v1:alice", JSON.stringify(saved));
   assert.equal(mount(storage, "alice").states[1].length, 1);
+});
+
+test("road geometry survives reload without GPS or road downloads and reverse visits deduplicate", () => {
+  const storage = new Map();
+  const segment = { aLat: 58.6, aLng: 23.2, bLat: 58.601, bLng: 23.201 };
+  const first = mount(storage, "alice");
+  first.hook.rememberCoverage([58.6, 23.2], segment);
+  first.hook.rememberCoverage([58.601, 23.201], { aLat: segment.bLat, aLng: segment.bLng, bLat: segment.aLat, bLng: segment.aLng });
+  const restored = mount(storage, "alice");
+  assert.equal(restored.states[3].length, 1);
+  assert.equal(restored.states[3][0].bLng, 23.201);
+  const saved = JSON.parse(storage.get("muhu-road-coverage-v1:alice"));
+  assert.equal(Object.keys(saved.pending).length, 1);
+  assert.equal(Object.values(saved.pending)[0].segment.aLat, 58.6);
 });
 
 test("cloud history uses only owner filter and sorts locally without a composite index", async () => {

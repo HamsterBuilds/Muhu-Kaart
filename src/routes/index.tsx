@@ -80,7 +80,7 @@ function MuhuApp() {
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
   const { tracking, liveTrack, trackingPos, start, stop } = useTracking(code);
-  const { localCoverage, rememberCoverage, coverageOwner, syncStatus } = useRoadCoverage(tracksQuery.data);
+  const { localCoverage, coverageSegments, rememberCoverage, coverageOwner, syncStatus } = useRoadCoverage(tracksQuery.data);
   const { add, remove, setVisited, update } = usePointActions(code, groupId);
 
   // Jälgimise ajal uueneb asukoht ka taustal (BackgroundGeolocation)
@@ -132,7 +132,7 @@ function MuhuApp() {
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-background">
       <Suspense fallback={<div className="h-full w-full bg-secondary" />}>
-        <MuhuMap key={coverageOwner} points={points} tracks={tracks} me={me} onSelect={setSelected} onCoverage={rememberCoverage} />
+        <MuhuMap key={coverageOwner} points={points} tracks={tracks} savedSegments={coverageSegments} me={me} onSelect={setSelected} onCoverage={rememberCoverage} />
       </Suspense>
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-[800] p-3">
@@ -145,7 +145,7 @@ function MuhuApp() {
               {groupCode ? `Grupi kood ${groupCode} · ` : ""}
               {userName ? `${userName} · ` : ""}minu kood {code}
             </p>
-            <p className="text-xs text-muted-foreground">{syncStatus} · pilvest {tracksQuery.data?.reduce((n, t) => n + t.points.length, 0) ?? 0}{tracksQuery.error ? ` · Laadimisviga: ${tracksQuery.error.message}` : ""}</p>
+            <p className="text-xs text-muted-foreground">{syncStatus} · pilvest {tracksQuery.data?.reduce((n, t) => n + t.points.length, 0) ?? 0} · rohelisi lõike {coverageSegments.length}{tracksQuery.error ? ` · Laadimisviga: ${tracksQuery.error.message}` : ""}</p>
           </div>
           <button
             onClick={() => setShowGroups(true)}

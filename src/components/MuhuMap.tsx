@@ -56,19 +56,14 @@ const CORRIDOR_TRIGGER_METERS = 120;
 const ROAD_INDEX_DEG = 0.01;
 const VECTOR_ROAD_TILES = "https://vector.openstreetmap.org/shortbread_v1/{z}/{x}/{y}.mvt";
 
+type CoverageSegment = { aLat: number; aLng: number; bLat: number; bLng: number };
 type Props = {
   points: MapPoint[];
   tracks: [number, number][][];
   me: { lat: number; lng: number } | null;
   onSelect: (id: string) => void;
-  onCoverage: (pt: [number, number]) => void;
-};
-
-type GreenRun = {
-  start: number;
-  end: number;
-  coords: [number, number][];
-  poly: LeafletPolyline;
+  onCoverage: (pt: [number, number], segment: CoverageSegment) => void;
+  savedSegments: CoverageSegment[];
 };
 
 function escapeHtml(value: string) {
@@ -78,7 +73,8 @@ function escapeHtml(value: string) {
   );
 }
 
-export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Props) {
+export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, onCoverage }: Props) {
+  const restoredSegmentsRef = useRef(new Map<string, LeafletPolyline>());
   const coverageCallback = useRef(onCoverage);
   coverageCallback.current = onCoverage;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +87,7 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
   }>({});
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const lineRendererRef = useRef<LeafletCanvas | null>(null);
+  const coverageRendererRef = useRef<LeafletCanvas | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const [mapReady, setMapReady] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(13);
@@ -99,7 +96,6 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
   const roadBoxRef = useRef(new Map<string, [number, number, number, number]>());
   const roadSpatialRef = useRef(new Map<string, Set<string>>());
   const cellStateRef = useRef(new Map<string, CellFetchState>());
-  const greenRunsRef = useRef(new Map<string, GreenRun[]>());
   const traveledRef = useRef<[number, number][]>([]);
   const savedCoverageRef = useRef(new Map<string, [number, number]>());
   const restoredViewRef = useRef(false);
@@ -131,7 +127,6 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
     const roadStore = roadsRef.current;
     const roadBoxStore = roadBoxRef.current;
     const roadSpatialStore = roadSpatialRef.current;
-    const greenRunStore = greenRunsRef.current;
     const cellStateStore = cellStateRef.current;
     (async () => {
       const L = await import("leaflet");
@@ -151,6 +146,10 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
       // ja suur maht renderdatakse sujuvalt ühel lõuendil
       const lineRenderer = L.canvas({ padding: 0.5 });
       lineRendererRef.current = lineRenderer;
+      const coveragePane = map.createPane("saved-road-coverage");
+      coveragePane.style.zIndex = "450";
+      coveragePane.style.pointerEvents = "none";
+      coverageRendererRef.current = L.canvas({ pane: "saved-road-coverage", padding: 0.5 });
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
@@ -232,7 +231,10 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
               }
               done(null, canvas);
             })
-            .catch((error: unknown) => done(error instanceof Error ? error : new Error("Teede plaat ebaõnnestus"), canvas));
+            .catch((error: unknown) => {
+              console.warn("Road geometry tile could not load", error);
+              done(error instanceof Error ? error : new Error("Teede plaat ebaõnnestus"), canvas);
+            });
           return canvas;
         },
       });
@@ -289,40 +291,6 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
         vectorLines.delete(key);
       };
       // Teede hankimine (punased) + läbitud lõikude roheliseks märkimine
-      const markSegmentGreen = (road: Road, segIdx: number) => {
-        const runs = greenRunsRef.current.get(road.id) ?? [];
-        for (const run of runs) {
-          if (segIdx >= run.start && segIdx <= run.end) return;
-          if (segIdx === run.end + 1) {
-            run.end = segIdx;
-            run.coords.push(road.coords[segIdx + 1]!);
-            run.poly.setLatLngs(run.coords);
-            return;
-          }
-          if (segIdx === run.start - 1) {
-            run.start = segIdx;
-            run.coords.unshift(road.coords[segIdx]!);
-            run.poly.setLatLngs(run.coords);
-            return;
-          }
-        }
-        const poly = L.polyline([road.coords[segIdx]!, road.coords[segIdx + 1]!], {
-          color: TRAVELED_COLOR,
-          weight: 6,
-          opacity: 0.95,
-          lineCap: "round",
-          lineJoin: "round",
-          renderer: lineRenderer,
-        }).addTo(traveledLayer);
-        runs.push({
-          start: segIdx,
-          end: segIdx,
-          coords: [road.coords[segIdx]!, road.coords[segIdx + 1]!],
-          poly,
-        });
-        greenRunsRef.current.set(road.id, runs);
-      };
-
       const processPoint = (pt: [number, number]) => {
         // Kontrolli ainult lähimate ~1 km ruutude teid, mitte kõiki kaardile
         // laaditud teid. See hoiab liikumise sujuvana ka kümnete tuhandete teede korral.
@@ -348,8 +316,9 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
           if (!road) continue;
           for (let i = 0; i < road.coords.length - 1; i++) {
             if (segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!) < ROAD_HIT_METERS) {
-              markSegmentGreen(road, i);
-              coverageCallback.current(pt);
+              const a = road.coords[i]!;
+              const b = road.coords[i + 1]!;
+              coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1] });
             }
           }
         }
@@ -578,11 +547,12 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
       mapRef.current?.remove();
       mapRef.current = null;
       lineRendererRef.current = null;
+      coverageRendererRef.current = null;
       layersRef.current = {};
       roadStore.clear();
       roadBoxStore.clear();
       roadSpatialStore.clear();
-      greenRunStore.clear();
+      restoredSegmentsRef.current.clear();
       savedCoverageRef.current.clear();
       savedCoverageSpatialRef.current.clear();
       cellStateStore.clear();
@@ -611,6 +581,23 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
       marker.addTo(layer);
     }
   }, [points, mapReady]);
+
+  // Persisted road geometry renders immediately without waiting for OSM or GPS.
+  useEffect(() => {
+    const L = leafletRef.current;
+    const layer = layersRef.current.traveled;
+    const renderer = coverageRendererRef.current;
+    if (!L || !layer || !renderer) return;
+    for (const s of savedSegments) {
+      const key = [`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_");
+      if (restoredSegmentsRef.current.has(key)) continue;
+      const poly = L.polyline([[s.aLat, s.aLng], [s.bLat, s.bLng]], {
+        color: TRAVELED_COLOR, weight: 6, opacity: 0.95,
+        lineCap: "round", lineJoin: "round", renderer,
+      }).addTo(layer);
+      restoredSegmentsRef.current.set(key, poly);
+    }
+  }, [savedSegments, mapReady]);
 
   // GPS tracks are coverage input only, never a separate blue route overlay.
   // Both live and saved points color the existing road geometry below.

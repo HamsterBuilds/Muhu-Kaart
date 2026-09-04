@@ -28,6 +28,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { firebaseAuth, firestore } from "@/lib/firebase";
+import type { CoverageSegment } from "@/hooks/useRoadCoverage";
 
 export type FirebaseUser = { id: string; name: string; email: string };
 export type FirebaseGroup = { id: string; name: string; join_code: string };
@@ -325,7 +326,7 @@ export async function startFirebaseTrack() {
 }
 export async function appendFirebaseTrackPoints(
   trackId: string,
-  points: { id: string; lat: number; lng: number; t: string }[],
+  points: { id: string; lat: number; lng: number; t: string; segment?: CoverageSegment }[],
 ) {
   if (!points.length) return;
   // One atomic, idempotent batch: retrying after a network interruption
@@ -339,6 +340,7 @@ export async function appendFirebaseTrackPoints(
         lat: p.lat,
         lng: p.lng,
         recordedAt: p.t,
+        ...(p.segment ? { segment: p.segment } : {}),
       });
     }
     batch.update(doc(firestore, "tracks", trackId), { updatedAt: serverTimestamp() });
@@ -364,6 +366,7 @@ export async function listFirebaseTracks() {
       return {
         id: t.id,
         coverage: t.data().coverage === true,
+        segments: points.docs.flatMap((p) => p.data().segment ? [p.data().segment as CoverageSegment] : []),
         startedAt: t.data().startedAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         points: points.docs.map(
           (p) => [p.data().lat as number, p.data().lng as number] as [number, number],
