@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      diagnostics:
+        description: Build isolated coverage replay (no release or account writes)
+        type: boolean
+        default: false
 permissions:
   contents: write
 jobs:
@@ -31,6 +36,7 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
       - run: npm run build:capacitor
         env:
+          VITE_COVERAGE_REPLAY: ${{ inputs.diagnostics && 'true' || 'false' }}
           VITE_APP_BUILD_NUMBER: ${{ github.run_number }}
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -76,7 +82,13 @@ jobs:
           echo "APK SHA-1:      $APK_SHA1"
           test -n "$EXPECTED_SHA1" && test "$APK_SHA1" = "$EXPECTED_SHA1"
       - uses: softprops/action-gh-release@v2
+        if: ${{ !inputs.diagnostics }}
         with:
           tag_name: apk-${{ github.run_number }}
           name: Android APK ${{ github.run_number }}
           files: android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.diagnostics }}
+        with:
+          name: coverage-replay-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

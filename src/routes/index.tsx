@@ -18,6 +18,8 @@ import { clearCode, loadGroup, saveCode, saveGroup } from "@/lib/session";
 import { useGeolocation, useMuhuData, usePointActions, useTracking } from "@/hooks/useMuhu";
 
 const MuhuMap = lazy(() => import("@/components/MuhuMap"));
+const CoverageReplay = import.meta.env["VITE_COVERAGE_REPLAY"] === "true"
+  ? lazy(() => import("@/components/CoverageReplay")) : null;
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -38,7 +40,7 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: MuhuApp,
+  component: CoverageReplay ? () => <Suspense fallback={null}><CoverageReplay /></Suspense> : MuhuApp,
 });
 
 function MuhuApp() {
