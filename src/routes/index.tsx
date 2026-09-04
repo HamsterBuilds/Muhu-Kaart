@@ -11,6 +11,8 @@ import Welcome from "@/components/Welcome";
 import GroupSheet from "@/components/GroupSheet";
 import PointCard from "@/components/PointCard";
 import UpdateButton from "@/components/UpdateButton";
+import MapDashboard from "@/components/MapDashboard";
+import { distanceMeters } from "@/lib/muhu";
 import { useRoadCoverage } from "@/hooks/useRoadCoverage";
 import { clearCode, loadGroup, saveCode, saveGroup } from "@/lib/session";
 import { useGeolocation, useMuhuData, usePointActions, useTracking } from "@/hooks/useMuhu";
@@ -130,64 +132,22 @@ function MuhuApp() {
   };
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-background">
+    <div className="map-screen relative h-dvh w-full overflow-hidden">
       <Suspense fallback={<div className="h-full w-full bg-secondary" />}>
         <MuhuMap key={coverageOwner} points={points} tracks={tracks} savedSegments={coverageSegments} me={me} onSelect={setSelected} onCoverage={rememberCoverage} />
       </Suspense>
 
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-[800] p-3">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-border bg-card/95 px-3 py-2 shadow-sm backdrop-blur">
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-lg leading-tight text-foreground">
-              {groupName || "Vali grupp"}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {groupCode ? `Grupi kood ${groupCode} · ` : ""}
-              {userName ? `${userName} · ` : ""}minu kood {code}
-            </p>
-            <p className="text-xs text-muted-foreground">{syncStatus} · pilvest {tracksQuery.data?.reduce((n, t) => n + t.points.length, 0) ?? 0} · rohelisi lõike {coverageSegments.length}{tracksQuery.error ? ` · Laadimisviga: ${tracksQuery.error.message}` : ""}</p>
-          </div>
-          <button
-            onClick={() => setShowGroups(true)}
-            className="rounded-xl bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground"
-          >
-            Grupid
-          </button>
-          <UpdateButton />
-          <button
-            onClick={() => {
-              void signOut(firebaseAuth);
-              clearCode();
-              setCode(null);
-              setGroupId(null);
-            }}
-            className="rounded-xl px-2 py-2 text-sm text-muted-foreground"
-          >
-            Välju
-          </button>
-        </div>
-        <div className="pointer-events-auto mt-2 flex w-fit items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
-          <span className="font-semibold text-foreground">
-            {visitedCount} / {points.length} punkti
-          </span>
-          <span className="h-3 w-px bg-border" />
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <i className="h-2.5 w-2.5 rounded-full bg-[#2f9e7f]" /> käidud
-          </span>
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <i className="h-2.5 w-2.5 rounded-full bg-[#d9453c]" /> uus
-          </span>
-        </div>
-        {(!onMuhu || geoError) && (
-          <p className="pointer-events-auto mt-2 rounded-xl bg-card/95 px-3 py-2 text-xs text-muted-foreground shadow-sm">
-            {geoError
-              ? `Asukohta ei saa: ${geoError}`
-              : me
-                ? "Sa oled Muhu saarest väljas – kaart ja jälgimine töötavad ka siin."
-                : "Otsin sinu asukohta..."}
-          </p>
-        )}
-      </header>
+      <MapDashboard
+        groupName={groupName} groupCode={groupCode} userName={userName}
+        syncStatus={tracksQuery.error ? tracksQuery.error.message : syncStatus}
+        visited={visitedCount} total={points.length} segments={coverageSegments.length}
+        walkedKm={coverageSegments.reduce((sum, s) => sum + distanceMeters({lat: s.aLat, lng: s.aLng}, {lat: s.bLat, lng: s.bLng}), 0) / 1000}
+        notice={geoError ? `Asukohta ei saa: ${geoError}` : !me ? "Otsin sinu asukohta…" : !onMuhu ? "outside" : null}
+        tracking={tracking} canAdd={!!groupId} hideDock={!!selectedPoint || adding}
+        onGroups={() => setShowGroups(true)}
+        onLogout={() => { void signOut(firebaseAuth); clearCode(); setCode(null); setGroupId(null); }}
+        onTrack={() => tracking ? void stop() : void start()} onAdd={() => setAdding(true)}
+      />
 
       {selectedPoint && (
         <PointCard
@@ -233,27 +193,7 @@ function MuhuApp() {
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={() => (tracking ? void stop() : void start())}
-                className={`flex-1 rounded-2xl px-4 py-4 text-base font-semibold shadow-lg transition-colors ${
-                  tracking
-                    ? "bg-destructive text-destructive-foreground"
-                    : "bg-primary text-primary-foreground"
-                }`}
-              >
-                {tracking ? "Lõpeta jälgimine" : "Jälgi mind"}
-              </button>
-              <button
-                disabled={!groupId}
-                onClick={() => setAdding(true)}
-                className="flex-1 rounded-2xl bg-accent px-4 py-4 text-base font-semibold text-accent-foreground shadow-lg disabled:opacity-40"
-              >
-                Lisa punkt
-              </button>
-            </div>
-          )}
+          ) : null}
         </div>
       )}
 

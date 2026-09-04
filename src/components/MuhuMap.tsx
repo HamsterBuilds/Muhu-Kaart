@@ -44,7 +44,7 @@ const SHOPS: { name: string; lat: number; lng: number }[] = [
 ];
 
 const ROAD_COLOR = "#d9453c";
-const TRAVELED_COLOR = "#2f9e7f";
+const TRAVELED_COLOR = "#16f6a0";
 /** The displayed road match remains precise; GPS accuracy can widen candidate lookup. */
 const ROAD_HIT_METERS = 3;
 const MAX_BATCH_CELLS = 12;
@@ -782,7 +782,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         type="button"
         onClick={locateMe}
         aria-label="Kuva minu asukoht"
-        className="absolute bottom-28 right-3 z-[600] flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card/95 text-foreground shadow-lg backdrop-blur"
+        className="map-locate"
       >
         <Crosshair className="h-5 w-5" />
       </button>
