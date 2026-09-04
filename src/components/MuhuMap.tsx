@@ -45,8 +45,8 @@ const SHOPS: { name: string; lat: number; lng: number }[] = [
 
 const ROAD_COLOR = "#d9453c";
 const TRAVELED_COLOR = "#2f9e7f";
-/** GPS triivib telefonis tavaliselt mitu meetrit; 10 m tabab päris tee usaldusväärselt. */
-const ROAD_HIT_METERS = 10;
+/** Only mark a road as visited when the GPS fix is within three metres. */
+const ROAD_HIT_METERS = 3;
 const MAX_BATCH_CELLS = 12;
 const MAX_WORKERS = 1;
 const VIEW_PAD = 0.5;
