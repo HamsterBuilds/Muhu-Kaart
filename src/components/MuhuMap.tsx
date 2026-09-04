@@ -656,13 +656,13 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       const key = [`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_");
       if (restoredSegmentsRef.current.has(key)) continue;
       const poly = L.polyline([[s.aLat, s.aLng], [s.bLat, s.bLng]], {
-        color: lightMap ? "#166534" : TRAVELED_COLOR, weight: 9, opacity: 1,
+        color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 9, opacity: 1,
         lineCap: "round", lineJoin: "round", renderer,
       }).addTo(layer);
       restoredSegmentsRef.current.set(key, poly);
     }
     for (const poly of restoredSegmentsRef.current.values()) {
-      poly.setStyle({ color: lightMap ? "#166534" : TRAVELED_COLOR });
+      poly.setStyle({ color: lightMap ? "#22a447" : TRAVELED_COLOR });
     }
   }, [savedSegments, mapReady, lightMap]);
 
