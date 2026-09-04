@@ -8,11 +8,13 @@ import { appendFirebaseTrackPoints } from "@/lib/firebase-data";
 type Point = { id: string; lat: number; lng: number; t: string };
 type Store = { points: Record<string, Point>; pending: Record<string, Point> };
 const key = (uid: string) => `muhu-road-coverage-v1:${uid}`;
+const pointId = (lat: number, lng: number) => `${Math.round(lat / 0.000045)}_${Math.round(lng / 0.00008)}`;
 
 /** The local copy is retained after acknowledgement; only the upload queue clears. */
-export function useRoadCoverage() {
+export function useRoadCoverage(cloudTracks?: { points: [number, number][] }[]) {
   const [owner, setOwner] = useState<string | null>(null);
   const [tracks, setTracks] = useState<[number, number][][]>([]);
+  const [syncStatus, setSyncStatus] = useState("Laen käidud teid…");
   const current = useRef<{ uid: string; data: Store } | null>(null);
   const warned = useRef(false);
   const persist = useCallback(() => {
@@ -45,18 +47,41 @@ export function useRoadCoverage() {
     setOwner(user?.uid ?? null);
     // Separate samples must not be joined into artificial cross-island routes.
     setTracks(Object.values(data.points).map((p) => [[p.lat, p.lng]]));
+    setSyncStatus(`Kohalikult ${Object.keys(data.points).length} · ootel ${Object.keys(data.pending).length}`);
   }), []);
 
   const remember = useCallback((pt: [number, number]) => {
     const state = current.current;
     if (!state || state.uid !== firebaseAuth.currentUser?.uid) return;
-    const id = `${Math.round(pt[0] / 0.000045)}_${Math.round(pt[1] / 0.00008)}`;
+    const id = pointId(pt[0], pt[1]);
     if (state.data.points[id]) return;
     const p = { id, lat: pt[0], lng: pt[1], t: new Date().toISOString() };
     state.data.points[id] = p;
     state.data.pending[id] = p;
     persist();
   }, [persist]);
+
+  // Cache downloaded history even when its roads are outside the viewport.
+  // Cloud-confirmed points do not need to be enqueued for upload again.
+  useEffect(() => {
+    const state = current.current;
+    if (!state || state.uid !== owner || !cloudTracks) return;
+    let changed = false;
+    for (const track of cloudTracks) {
+      for (const [lat, lng] of track.points) {
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        const id = pointId(lat, lng);
+        if (state.data.points[id]) continue;
+        state.data.points[id] = { id, lat, lng, t: new Date().toISOString() };
+        changed = true;
+      }
+    }
+    if (changed) {
+      persist();
+      setTracks(Object.values(state.data.points).map((p) => [[p.lat, p.lng]]));
+      setSyncStatus(`Kohalikult ${Object.keys(state.data.points).length} · ootel ${Object.keys(state.data.pending).length}`);
+    }
+  }, [cloudTracks, owner, persist]);
 
   useEffect(() => {
     if (!owner) return;
@@ -67,6 +92,7 @@ export function useRoadCoverage() {
       const batch = Object.values(state.data.pending);
       if (!batch.length) return;
       busy = true;
+      setSyncStatus(`Salvestan pilve ${batch.length} punkti…`);
       try {
         const trackId = `coverage-${owner}`;
         await setDoc(doc(firestore, "tracks", trackId), { userId: owner, startedAt: serverTimestamp(), coverage: true }, { merge: true });
@@ -74,7 +100,9 @@ export function useRoadCoverage() {
         await appendFirebaseTrackPoints(trackId, batch);
         for (const p of batch) delete state.data.pending[p.id];
         if (current.current === state) persist();
-      } catch {
+        if (current.current === state) setSyncStatus(`Pilves kinnitatud · kohalikult ${Object.keys(state.data.points).length}`);
+      } catch (error) {
+        if (current.current === state) setSyncStatus(`Pilve salvestus ebaõnnestus: ${error instanceof Error ? error.message : String(error)}`);
         // Keep the durable queue for reconnect, reload, or the next timer tick.
       } finally { busy = false; }
     };
@@ -84,5 +112,5 @@ export function useRoadCoverage() {
     return () => { clearInterval(timer); window.removeEventListener("online", flush); };
   }, [owner, persist]);
 
-  return { localCoverage: tracks, rememberCoverage: remember, coverageOwner: owner };
+  return { localCoverage: tracks, rememberCoverage: remember, coverageOwner: owner, syncStatus };
 }

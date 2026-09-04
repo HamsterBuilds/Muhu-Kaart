@@ -4,7 +4,7 @@ import {
   getFirestore,
   initializeFirestore,
   persistentLocalCache,
-  persistentSingleTabManager,
+  persistentMultipleTabManager,
   type Firestore,
 } from "firebase/firestore";
 
@@ -28,7 +28,7 @@ let database: Firestore;
 if (typeof window !== "undefined") {
   try {
     database = initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
   } catch {
     // Hot reload or another module may already have initialized Firestore.

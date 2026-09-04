@@ -349,14 +349,14 @@ export async function endFirebaseTrack(trackId: string) {
   await updateDoc(doc(firestore, "tracks", trackId), { endedAt: serverTimestamp() });
 }
 export async function listFirebaseTracks() {
+  await firebaseAuth.authStateReady();
   const result = await getDocs(
     query(
       collection(firestore, "tracks"),
       where("userId", "==", uid()),
-      orderBy("startedAt", "desc"),
     ),
   );
-  return Promise.all(
+  const tracks = await Promise.all(
     result.docs.map(async (t) => {
       const points = await getDocs(
         query(collection(firestore, "tracks", t.id, "points"), orderBy("recordedAt", "asc")),
@@ -371,4 +371,7 @@ export async function listFirebaseTracks() {
       };
     }),
   );
+  // All tracks are loaded anyway. Sort locally to avoid requiring a deployed
+  // composite userId/startedAt index just to restore a user's road history.
+  return tracks.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

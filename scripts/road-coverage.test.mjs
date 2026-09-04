@@ -59,3 +59,40 @@ test("acknowledged local coverage remains visible with an empty upload queue", (
   storage.set("muhu-road-coverage-v1:alice", JSON.stringify(saved));
   assert.equal(mount(storage, "alice").states[1].length, 1);
 });
+
+test("cloud history uses only owner filter and sorts locally without a composite index", async () => {
+  const exports = {};
+  let ready = false;
+  const queries = [];
+  const firestore = {
+    collection: (_, ...path) => path.join("/"),
+    where: (...args) => ({ where: args }),
+    orderBy: (...args) => ({ orderBy: args }),
+    query: (path, ...filters) => { const q = { path, filters }; queries.push(q); return q; },
+    getDocs: async (q) => {
+      assert.ok(ready, "authentication must be restored before querying");
+      if (q.path === "tracks") {
+        assert.equal(q.filters.length, 1);
+        assert.equal(q.filters[0].where[0], "userId");
+        assert.equal(q.filters[0].where[2], "alice");
+        return { docs: ["2025-01-01", "2026-01-01"].map((date, i) => ({
+          id: `track${i}`, data: () => ({ startedAt: { toDate: () => new Date(date) }, coverage: i === 1 }),
+        })) };
+      }
+      return { docs: [{ data: () => ({ lat: 58.6, lng: 23.2 }) }] };
+    },
+  };
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../src/lib/firebase-data.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    exports, Date, console,
+    require: (name) => name === "firebase/firestore" ? firestore : name === "@/lib/firebase" ? {
+      firebaseAuth: { currentUser: { uid: "alice" }, authStateReady: async () => { ready = true; } },
+    } : {},
+  });
+  const result = await exports.listFirebaseTracks();
+  assert.equal(result.length, 2);
+  assert.equal(result[0].id, "track1");
+  assert.equal(result[0].coverage, true);
+  assert.equal(result[0].points[0][0], 58.6);
+});

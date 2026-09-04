@@ -5,14 +5,14 @@ import { listFirebaseGroups } from "@/lib/firebase-data";
 
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase";
 import Welcome from "@/components/Welcome";
 import GroupSheet from "@/components/GroupSheet";
 import PointCard from "@/components/PointCard";
 import UpdateButton from "@/components/UpdateButton";
 import { useRoadCoverage } from "@/hooks/useRoadCoverage";
-import { clearCode, loadCode, loadGroup, saveCode, saveGroup } from "@/lib/session";
+import { clearCode, loadGroup, saveCode, saveGroup } from "@/lib/session";
 import { useGeolocation, useMuhuData, usePointActions, useTracking } from "@/hooks/useMuhu";
 
 const MuhuMap = lazy(() => import("@/components/MuhuMap"));
@@ -52,9 +52,13 @@ function MuhuApp() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setCode(loadCode());
     setGroupId(loadGroup());
-    setReady(true);
+    return onAuthStateChanged(firebaseAuth, (user) => {
+      setCode(user?.uid ?? null);
+      setUserName(user?.displayName ?? user?.email?.split("@")[0] ?? "");
+      if (user) saveCode(user.uid);
+      setReady(true);
+    });
   }, []);
 
   const groupsQuery = useQuery({
@@ -76,7 +80,7 @@ function MuhuApp() {
   const { pos, error: geoError, onMuhu } = useGeolocation(!!code);
   const { pointsQuery, tracksQuery } = useMuhuData(code, groupId);
   const { tracking, liveTrack, trackingPos, start, stop } = useTracking(code);
-  const { localCoverage, rememberCoverage, coverageOwner } = useRoadCoverage();
+  const { localCoverage, rememberCoverage, coverageOwner, syncStatus } = useRoadCoverage(tracksQuery.data);
   const { add, remove, setVisited, update } = usePointActions(code, groupId);
 
   // Jälgimise ajal uueneb asukoht ka taustal (BackgroundGeolocation)
@@ -141,6 +145,7 @@ function MuhuApp() {
               {groupCode ? `Grupi kood ${groupCode} · ` : ""}
               {userName ? `${userName} · ` : ""}minu kood {code}
             </p>
+            <p className="text-xs text-muted-foreground">{syncStatus} · pilvest {tracksQuery.data?.reduce((n, t) => n + t.points.length, 0) ?? 0}{tracksQuery.error ? ` · Laadimisviga: ${tracksQuery.error.message}` : ""}</p>
           </div>
           <button
             onClick={() => setShowGroups(true)}

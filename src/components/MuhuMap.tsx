@@ -102,6 +102,7 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
   const greenRunsRef = useRef(new Map<string, GreenRun[]>());
   const traveledRef = useRef<[number, number][]>([]);
   const savedCoverageRef = useRef(new Map<string, [number, number]>());
+  const restoredViewRef = useRef(false);
   const savedCoverageSpatialRef = useRef(new Map<string, [number, number][]>());
   const lastFixRef = useRef<[number, number] | null>(null);
   const firstFixDoneRef = useRef(false);
@@ -179,12 +180,19 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
               if (streets) {
                 const tileCenter = map.unproject(L.point((coords.x + 0.5) * size, (coords.y + 0.5) * size), coords.z);
                 const currentFix = lastFixRef.current;
-                // Rohelise 2 m tabamise indeksisse lisame ainult kasutaja lähiala
-                // plaadid, mitte kogu vaate teedevõrku.
-                const indexForTracking = !!currentFix && distanceMeters(
+                const tileNorthWest = map.unproject(L.point(coords.x * size, coords.y * size), coords.z);
+                const tileSouthEast = map.unproject(L.point((coords.x + 1) * size, (coords.y + 1) * size), coords.z);
+                let hasSavedCoverage = false;
+                for (let y = Math.floor(tileSouthEast.lat / ROAD_INDEX_DEG); y <= Math.floor(tileNorthWest.lat / ROAD_INDEX_DEG); y++) {
+                  for (let x = Math.floor(tileNorthWest.lng / ROAD_INDEX_DEG); x <= Math.floor(tileSouthEast.lng / ROAD_INDEX_DEG); x++) {
+                    if (savedCoverageSpatialRef.current.has(`${y}:${x}`)) hasSavedCoverage = true;
+                  }
+                }
+                // Saved roads must also be indexed on devices without GPS.
+                const indexForTracking = hasSavedCoverage || (!!currentFix && distanceMeters(
                   { lat: currentFix[0], lng: currentFix[1] },
                   { lat: tileCenter.lat, lng: tileCenter.lng },
-                ) < 2_500;
+                ) < 2_500);
                 const nearbyRoads: Road[] = [];
                 const visibleLines: [number, number][][] = [];
                 for (let i = 0; i < streets.length; i++) {
@@ -208,13 +216,12 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
                     visibleLines.push(roadCoords);
                     if (
                       indexForTracking &&
-                      currentFix &&
-                      roadCoords.some((point) =>
+                      (hasSavedCoverage || (currentFix && roadCoords.some((point) =>
                         distanceMeters(
                           { lat: currentFix[0], lng: currentFix[1] },
                           { lat: point[0], lng: point[1] },
                         ) < 750,
-                      )
+                      )))
                     ) {
                       nearbyRoads.push({ id: `vt:${coords.z}:${coords.x}:${coords.y}:${feature.id}:${lineIndex}`, coords: roadCoords });
                     }
@@ -316,9 +323,6 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
         greenRunsRef.current.set(road.id, runs);
       };
 
-      const gridKey = (lat: number, lng: number) =>
-        `${Math.floor(lat / ROAD_INDEX_DEG)}:${Math.floor(lng / ROAD_INDEX_DEG)}`;
-
       const processPoint = (pt: [number, number]) => {
         // Kontrolli ainult lähimate ~1 km ruutude teid, mitte kõiki kaardile
         // laaditud teid. See hoiab liikumise sujuvana ka kümnete tuhandete teede korral.
@@ -383,7 +387,9 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
           const x1 = Math.floor(box[3] / ROAD_INDEX_DEG);
           for (let y = y0; y <= y1; y++) {
             for (let x = x0; x <= x1; x++) {
-              const key = gridKey(y * ROAD_INDEX_DEG, x * ROAD_INDEX_DEG);
+              // y/x are already integer cell indices. A float round-trip can
+              // floor into the preceding cell and miss restored coverage.
+              const key = `${y}:${x}`;
               replayCells.add(key);
               const ids = roadSpatialRef.current.get(key) ?? new Set<string>();
               ids.add(road.id);
@@ -649,6 +655,25 @@ export default function MuhuMap({ points, tracks, me, onSelect, onCoverage }: Pr
       spatial.set(key, list);
     }
     for (const pt of coverage.values()) processPointRef.current(pt);
+    // Without a GPS fix (for example on another desktop), show the restored
+    // history instead of leaving the user on the default Muhu view.
+    if (mapReady && mapRef.current && coverage.size && !restoredViewRef.current) {
+      restoredViewRef.current = true;
+      if (!lastFixRef.current && !interactedRef.current) {
+        // Old trips can be on different continents. Start with the densest
+        // local cluster rather than fitting the entire world into the screen.
+        const clusters = new Map<string, [number, number][]>();
+        for (const point of coverage.values()) {
+          const key = `${Math.floor(point[0] * 10)}:${Math.floor(point[1] * 10)}`;
+          const cluster = clusters.get(key) ?? [];
+          cluster.push(point);
+          clusters.set(key, cluster);
+        }
+        const largest = [...clusters.values()].sort((a, b) => b.length - a.length)[0]!;
+        mapRef.current.fitBounds(largest, { padding: [40, 40], maxZoom: 18 });
+      }
+      vectorRoadRefreshRef.current();
+    }
   }, [tracks, mapReady]);
 
   useEffect(() => {
