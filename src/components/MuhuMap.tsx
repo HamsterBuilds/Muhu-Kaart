@@ -7,6 +7,7 @@ import type {
 } from "leaflet";
 import { Map as MapIcon, Navigation } from "lucide-react";
 import { createBuildingDepthLayer } from "@/lib/building-depth";
+import { roadGapPath } from "@/lib/road-gap";
 import { VectorTile } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
 import "leaflet/dist/leaflet.css";
@@ -82,6 +83,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const miniatureRef = useRef<HTMLDivElement | null>(null);
   const [showBuildingDepth, setShowBuildingDepth] = useState(true);
   const [lightMap, setLightMap] = useState(false);
+  const lastRoadFixTime = useRef(0);
   const mapRef = useRef<LeafletMap | null>(null);
   const layersRef = useRef<{
     roads?: LayerGroup;
@@ -358,6 +360,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         }
         let nearest: { a: [number, number]; b: [number, number] } | null = null;
         let nearestDistance = roadHitMetersRef.current;
+        let secondDistance = Infinity;
         for (const id of candidates) {
           const box = roadBoxRef.current.get(id);
           if (!box) continue;
@@ -374,14 +377,18 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           for (let i = 0; i < road.coords.length - 1; i++) {
             const distance = segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!);
             if (distance < nearestDistance) {
+              secondDistance = nearestDistance;
               const a = road.coords[i]!;
               const b = road.coords[i + 1]!;
               nearestDistance = distance;
               nearest = { a, b };
+            } else if (distance < secondDistance) {
+              secondDistance = distance;
             }
           }
         }
-        if (nearest) {
+        // An uncertain fix between neighbouring roads is not proof of a visit.
+        if (nearest && nearestDistance <= 3 && secondDistance - nearestDistance >= 1.5) {
           const { a, b } = nearest;
           coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1] });
         }
@@ -766,6 +773,14 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     // A phone may report a 7–10 m uncertainty even on a road. Snap the
     // resulting green geometry to the exact road segment, but use the current
     // reported uncertainty (capped) to decide which segment it belongs to.
+    if (!Number.isFinite(me.lat) || !Number.isFinite(me.lng) || (me.accuracy ?? 0) > 20) {
+      lastFixRef.current = null;
+      lastRoadFixTime.current = 0;
+      return;
+    }
+    const fixTime = Date.now();
+    if (fixTime - lastRoadFixTime.current > 30_000) lastFixRef.current = null;
+    lastRoadFixTime.current = fixTime;
     roadHitMetersRef.current = Math.min(12, Math.max(ROAD_HIT_METERS, me.accuracy ?? ROAD_HIT_METERS));
     const pt: [number, number] = [me.lat, me.lng];
     const map = mapRef.current;
@@ -814,15 +829,9 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         processPointRef.current(pt);
         return;
       }
-      // Sample every ordinary movement too: short segments between GPS fixes
-      // otherwise remain red even though the user passed over them.
-      const steps = Math.ceil(d / 2);
-      for (let i = 1; i <= steps; i++) {
-        const f = i / steps;
-        const s: [number, number] = [
-          last[0]! + (pt[0]! - last[0]!) * f,
-          last[1]! + (pt[1]! - last[1]!) * f,
-        ];
+      // Only bridge a short gap along one unambiguous mapped road. Never
+      // interpolate a straight chord through side streets or parallel roads.
+      for (const s of roadGapPath(roadsRef.current.values(), last, pt)) {
         traveledRef.current.push(s);
         processPointRef.current(s);
       }
