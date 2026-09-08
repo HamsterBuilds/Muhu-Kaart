@@ -65,8 +65,15 @@ test("live matching marks only the nearest road, not parallel neighbours", () =>
   }).outputText,context);
   assert.equal(marked.length,1);
   assert.equal(marked[0].aLat,0);
-  // A single road 2 m away must also match with a 3 m search radius.
+  // A phone fix 8 m off the mapped road must use its reported 10 m accuracy.
   roads.delete("parallel");
+  marked.length = 0;
+  context.roadHitMetersRef.current = 10;
+  vm.runInNewContext(ts.transpileModule(body + "processPoint([0.000072,0.5]);", {
+    compilerOptions:{target:ts.ScriptTarget.ES2022},
+  }).outputText,{...context});
+  assert.equal(marked.length,1);
+  // A single road 2 m away must also match with a 3 m search radius.
   context.roadHitMetersRef.current = 3;
   marked.length = 0;
   vm.runInNewContext(ts.transpileModule(body + "processPoint([0.000018,0.5]);", {

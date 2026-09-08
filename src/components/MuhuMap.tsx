@@ -66,6 +66,7 @@ type Props = {
   onSelect: (id: string) => void;
   onCoverage: (pt: [number, number], segment: CoverageSegment) => void;
   savedSegments: CoverageSegment[];
+  diagnosticRoads?: Road[];
 };
 
 function escapeHtml(value: string) {
@@ -75,7 +76,7 @@ function escapeHtml(value: string) {
   );
 }
 
-export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, onCoverage }: Props) {
+export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, onCoverage, diagnosticRoads }: Props) {
   const restoredSegmentsRef = useRef(new Map<string, LeafletPolyline>());
   const coverageCallback = useRef(onCoverage);
   coverageCallback.current = onCoverage;
@@ -393,8 +394,13 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             }
           }
         }
-        // An uncertain fix between neighbouring roads is not proof of a visit.
-        if (nearest && nearestDistance <= 3 && secondDistance - nearestDistance >= 1.5) {
+        // Respect the phone's reported accuracy while still rejecting a fix
+        // that cannot distinguish between neighbouring roads.
+        if (
+          nearest &&
+          nearestDistance <= roadHitMetersRef.current &&
+          secondDistance - nearestDistance >= 1.5
+        ) {
           const { a, b } = nearest;
           coverageCallback.current(pt, { aLat: a[0], aLng: a[1], bLat: b[0], bLng: b[1] });
         }
@@ -460,6 +466,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         }
       };
       vectorRoadSinkRef.current = (roads) => addRoads(roads, false);
+      if (diagnosticRoads?.length) addRoads(diagnosticRoads, false);
       // Alles nüüd on nii nähtava punase kihi renderdaja kui 2 m rohelise
       // lähedusindeksi vastuvõtja olemas. See on oluline esimesel GPS-fixil.
       redRoadTiles.redraw();
