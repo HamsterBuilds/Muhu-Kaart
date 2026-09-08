@@ -8,14 +8,14 @@ export async function deleteServerTracks(request: Request): Promise<Response> {
   if (request.method !== "POST") return reply("Method not allowed",405);
   const bearer = request.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
   if (!bearer) return reply("Sign in first",401);
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  if (!projectId || (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON && !process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+  const projectId = process.env["FIREBASE_PROJECT_ID"];
+  if (!projectId || (!process.env["FIREBASE_SERVICE_ACCOUNT_JSON"] && !process.env["GOOGLE_APPLICATION_CREDENTIALS"])) {
     return reply("Server administrator credentials have not been configured",503);
   }
   const app = getApps().find(a=>a.name === "track-admin") ?? initializeApp({
     projectId,
-    credential: process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-      ? cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) : applicationDefault(),
+    credential: process.env["FIREBASE_SERVICE_ACCOUNT_JSON"]
+      ? cert(JSON.parse(process.env["FIREBASE_SERVICE_ACCOUNT_JSON"])) : applicationDefault(),
   },"track-admin");
   try {
     const token = await getAuth(app).verifyIdToken(bearer,true);

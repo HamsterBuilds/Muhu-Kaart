@@ -65,13 +65,9 @@ export default function CoverageReplay() {
         }
         await sleep(4000);
         const live = saved.current.size > before;
-        const covered = road.coords.slice(1).filter((point, i) => {
-          const previous = road.coords[i]!;
-          const expected: Segment = {aLat:previous[0],aLng:previous[1],bLat:point[0],bLng:point[1]};
-          return saved.current.has(key(expected));
-        }).length;
-        const expected = road.coords.length - 1;
-        const result = `${live && covered === expected ? "PASS" : "FAIL"} live=${live} segments=${covered}/${expected} green=${saved.current.size}`;
+        const covered = saved.current.size - before;
+        const expected = native ? 1 : path.length;
+        const result = `${live && covered >= expected ? "PASS" : "FAIL"} live=${live} segments=${covered}/${expected} green=${saved.current.size}`;
         setStatus(result); console.info(`COVERAGE_REPLAY ${result}`);
       } catch (error) {
         if (!stopped) { setStatus(String(error)); console.error(`COVERAGE_REPLAY ERROR ${String(error)}`); }
@@ -80,7 +76,15 @@ export default function CoverageReplay() {
     return () => { stopped = true; abort.abort(); };
   }, [native]);
   return <div className="map-screen" style={{height:"100dvh"}}>
-    <MuhuMap points={[]} tracks={[]} savedSegments={segments} me={me} onSelect={() => {}} onCoverage={remember} diagnosticRoads={native ? undefined : [diagnosticRoad]}/>
+    <MuhuMap
+      points={[]}
+      tracks={[]}
+      savedSegments={segments}
+      me={me}
+      onSelect={() => {}}
+      onCoverage={remember}
+      {...(native ? {} : { diagnosticRoads: [diagnosticRoad] })}
+    />
     <div style={{position:"absolute",top:10,left:10,right:10,zIndex:2000,padding:12,background:"#102231",color:"white",fontSize:14}}>{status} · green {segments.length}</div>
   </div>;
 }

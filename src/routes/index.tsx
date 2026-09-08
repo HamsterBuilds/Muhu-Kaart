@@ -93,8 +93,7 @@ function MuhuApp() {
   const points = pointsQuery.data ?? [];
   const visitedCount = points.filter((p) => p.visited || p.mine).length;
   const tracks = useMemo(() => {
-    const saved = [...localCoverage, ...(tracksQuery.data ?? []).flatMap((t) =>
-      t.coverage ? t.points.map((p) => [p]) : [t.points])];
+    const saved = [...localCoverage, ...(tracksQuery.data ?? []).filter((t) => !t.coverage).map((t) => t.points)];
     return liveTrack.length > 1 ? [...saved, liveTrack] : saved;
   }, [tracksQuery.data, liveTrack, localCoverage]);
 

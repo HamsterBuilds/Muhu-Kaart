@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
-export type Road = { id: string; coords: [number, number][] };
+export type Road = { id: string; coords: [number, number][]; motorRoad?: boolean };
 export type BBox = { south: number; west: number; north: number; east: number };
 export type Cell = { key: string; bbox: BBox };
 /** fine = kõik teed tihedal võrgul (zoom ≥ 13); coarse = suured teed hõredal võrgul (zoom 11–12). */
@@ -13,6 +13,23 @@ const OVERPASS_TIMEOUT_MS = 20_000;
 
 const MAJOR_FILTER =
   '["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]';
+
+const MOTOR_ROAD_KINDS = new Set([
+  "motorway", "trunk", "primary", "secondary", "tertiary",
+  "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link",
+  "residential", "unclassified", "living_street", "service", "road", "track",
+]);
+const CONNECTOR_ROAD_KINDS = new Set(["footway", "path", "cycleway", "pedestrian", "steps"]);
+export function isMotorRoad(properties: Record<string, unknown>): boolean {
+  return MOTOR_ROAD_KINDS.has(String(properties["highway"] ?? properties["kind"] ?? ""))
+    && properties["rail"] !== true
+    && properties["motorcar"] !== "no" && properties["motor_vehicle"] !== "no";
+}
+export function isTraversableRoad(properties: Record<string, unknown>): boolean {
+  const kind = String(properties["highway"] ?? properties["kind"] ?? "");
+  return isMotorRoad(properties) || CONNECTOR_ROAD_KINDS.has(kind);
+}
+const TRAVERSABLE_ROAD_FILTER = `["highway"~"^(${[...MOTOR_ROAD_KINDS, ...CONNECTOR_ROAD_KINDS].join("|")})$"]`;
 
 export function gridDeg(mode: FetchMode): number {
   return mode === "fine" ? FINE_DEG : COARSE_DEG;
@@ -117,7 +134,7 @@ export async function fetchRoadsForCells(
   mode: FetchMode = "fine",
 ): Promise<Road[]> {
   if (!cells.length) return [];
-  const filter = mode === "coarse" ? MAJOR_FILTER : '["highway"]';
+  const filter = mode === "coarse" ? MAJOR_FILTER : TRAVERSABLE_ROAD_FILTER;
   const parts = cells
     .map(
       (c) =>
@@ -136,15 +153,16 @@ function parseOverpass(json: unknown): Road[] {
   if (!Array.isArray(elements)) return roads;
   for (const el of elements) {
     if (typeof el !== "object" || el === null) continue;
-    const e = el as { type?: unknown; id?: unknown; geometry?: unknown };
+    const e = el as { type?: unknown; id?: unknown; geometry?: unknown; tags?: Record<string, unknown> };
     if (e.type !== "way" || typeof e.id !== "number" || !Array.isArray(e.geometry)) continue;
+    if (!e.tags || !isTraversableRoad(e.tags)) continue;
     const coords: [number, number][] = [];
     for (const node of e.geometry) {
       if (typeof node !== "object" || node === null) continue;
       const p = node as { lat?: unknown; lon?: unknown };
       if (typeof p.lat === "number" && typeof p.lon === "number") coords.push([p.lat, p.lon]);
     }
-    if (coords.length >= 2) roads.push({ id: String(e.id), coords });
+    if (coords.length >= 2) roads.push({ id: String(e.id), coords, motorRoad: isMotorRoad(e.tags) });
   }
   return roads;
 }
@@ -188,4 +206,22 @@ export function segmentDistanceMeters(
   if (t < 0) t = 0;
   if (t > 1) t = 1;
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/** Return only the short portion proven by this GPS sample, never the entire
+ * potentially hundreds-of-metres-long map segment. */
+export function clippedSegmentAtPoint(
+  pt: [number, number], a: [number, number], b: [number, number], radiusMeters = 2.5,
+): { a: [number, number]; b: [number, number] } {
+  const latRef = ((a[0] + b[0]) / 2) * Math.PI / 180;
+  const dx = (b[1] - a[1]) * 111_320 * Math.cos(latRef);
+  const dy = (b[0] - a[0]) * 110_540;
+  const length = Math.hypot(dx, dy);
+  if (!length) return { a, b };
+  const px = (pt[1] - a[1]) * 111_320 * Math.cos(latRef);
+  const py = (pt[0] - a[0]) * 110_540;
+  const t = Math.max(0, Math.min(1, (px * dx + py * dy) / (length * length)));
+  const delta = radiusMeters / length;
+  const at = (n: number): [number, number] => [a[0] + (b[0] - a[0]) * n, a[1] + (b[1] - a[1]) * n];
+  return { a: at(Math.max(0, t - delta)), b: at(Math.min(1, t + delta)) };
 }
