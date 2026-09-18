@@ -127,9 +127,15 @@ function MuhuApp() {
       toast.error("Vali esmalt grupp");
       return;
     }
-    add.mutate({ title, lat: me.lat, lng: me.lng });
-    setTitle("");
-    setAdding(false);
+    add.mutate(
+      { title, lat: me.lat, lng: me.lng },
+      {
+        onSuccess: () => {
+          setTitle("");
+          setAdding(false);
+        },
+      },
+    );
   };
 
   return (
@@ -186,11 +192,11 @@ function MuhuApp() {
                   Katkesta
                 </button>
                 <button
-                  disabled={title.trim().length < 2}
+                  disabled={title.trim().length < 2 || add.isPending}
                   onClick={submitPoint}
                   className="flex-1 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-40"
                 >
-                  Salvesta
+                  {add.isPending ? "Salvestan…" : "Salvesta"}
                 </button>
               </div>
             </div>

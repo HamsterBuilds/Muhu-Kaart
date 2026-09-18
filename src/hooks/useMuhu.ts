@@ -6,6 +6,7 @@ import type { BackgroundGeolocationPlugin } from "@capacitor-community/backgroun
 import { isOnMuhu, distanceMeters } from "@/lib/muhu";
 import * as api from "@/lib/firebase-data";
 import { firebaseAuth } from "@/lib/firebase";
+import type { MapPointData } from "@/lib/firebase-data";
 
 /** Tausta-asukohajälgimine (Android foreground service); veebil pole implementatsiooni. */
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>("BackgroundGeolocation");
@@ -246,8 +247,26 @@ export function usePointActions(_code: string | null, groupId: string | null) {
   const add = useMutation({
     mutationFn: (i: { title: string; lat: number; lng: number }) =>
       api.addFirebasePoint(groupId!, i.title, i.lat, i.lng, "Kasutaja"),
-    onSuccess: () => {
-      invalidate();
+    onSuccess: (id, input) => {
+      // Adding one point must not refetch every point and every visit document
+      // in the group. That fan-out can freeze a phone with a larger group.
+      const optimistic: MapPointData = {
+        id,
+        title: input.title.trim(),
+        description: null,
+        imageUrl: null,
+        lat: input.lat,
+        lng: input.lng,
+        aiStatus: "disabled",
+        createdAt: new Date().toISOString(),
+        mine: true,
+        visited: false,
+        authorName: "Kasutaja",
+      };
+      qc.setQueryData<MapPointData[]>(["points", groupId], (previous) => [
+        optimistic,
+        ...(previous ?? []).filter((point) => point.id !== id),
+      ]);
       toast.success("Punkt lisatud");
     },
     onError: (e: Error) => toast.error(e.message),

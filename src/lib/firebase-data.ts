@@ -292,15 +292,19 @@ export async function addFirebasePoint(
   lng: number,
   authorName: string,
 ) {
-  const p = await addDoc(collection(firestore, "points"), {
-    groupId,
-    userId: uid(),
-    authorName,
-    title: title.trim(),
-    lat,
-    lng,
-    createdAt: serverTimestamp(),
-  });
+  const p = await withTimeout(
+    addDoc(collection(firestore, "points"), {
+      groupId,
+      userId: uid(),
+      authorName,
+      title: title.trim(),
+      lat,
+      lng,
+      createdAt: serverTimestamp(),
+    }),
+    DATA_TIMEOUT_MS,
+    "Punkti salvestamine võttis liiga kaua",
+  );
   return p.id;
 }
 export async function toggleFirebaseVisit(pointId: string, visited: boolean) {
