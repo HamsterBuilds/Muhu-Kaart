@@ -52,7 +52,6 @@ function MuhuApp() {
   const [showGroups, setShowGroups] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState("");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -118,26 +117,6 @@ function MuhuApp() {
     );
   }
 
-  const submitPoint = () => {
-    if (!me) {
-      toast.error("Asukoht pole veel teada");
-      return;
-    }
-    if (!groupId) {
-      toast.error("Vali esmalt grupp");
-      return;
-    }
-    add.mutate(
-      { title, lat: me.lat, lng: me.lng },
-      {
-        onSuccess: () => {
-          setTitle("");
-          setAdding(false);
-        },
-      },
-    );
-  };
-
   return (
     <div className="map-screen relative h-dvh w-full overflow-hidden">
       <Suspense fallback={<div className="h-full w-full bg-secondary" />}>
@@ -172,34 +151,12 @@ function MuhuApp() {
       {!selectedPoint && (
         <div className="absolute inset-x-0 bottom-0 z-[800] p-3">
           {adding ? (
-            <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-lg">
-              <p className="font-display text-lg text-foreground">Uus punkt siin</p>
-              <input
-                autoFocus
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Pealkiri, nt. Koguva sadam"
-                className="w-full rounded-xl border border-input bg-background px-4 py-3 outline-none focus:border-accent"
-              />
-              <p className="text-xs text-muted-foreground">
-                AI lisab hiljem ise kuni 2-lauselise kirjelduse ja pildi.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setAdding(false)}
-                  className="flex-1 rounded-xl bg-secondary px-4 py-3 font-medium text-secondary-foreground"
-                >
-                  Katkesta
-                </button>
-                <button
-                  disabled={title.trim().length < 2 || add.isPending}
-                  onClick={submitPoint}
-                  className="flex-1 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-40"
-                >
-                  {add.isPending ? "Salvestan…" : "Salvesta"}
-                </button>
-              </div>
-            </div>
+            <AddPointSheet
+              me={me}
+              groupId={groupId}
+              add={add}
+              onClose={() => setAdding(false)}
+            />
           ) : null}
         </div>
       )}
@@ -220,6 +177,65 @@ function MuhuApp() {
       )}
 
       <Toaster position="top-center" />
+    </div>
+  );
+}
+
+function AddPointSheet({
+  me,
+  groupId,
+  add,
+  onClose,
+}: {
+  me: { lat: number; lng: number } | null;
+  groupId: string | null;
+  add: ReturnType<typeof usePointActions>["add"];
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState("");
+
+  const submit = () => {
+    if (!me) {
+      toast.error("Asukoht pole veel teada");
+      return;
+    }
+    if (!groupId) {
+      toast.error("Vali esmalt grupp");
+      return;
+    }
+    add.mutate(
+      { title: title.trim(), lat: me.lat, lng: me.lng },
+      { onSuccess: onClose },
+    );
+  };
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-lg">
+      <p className="font-display text-lg text-foreground">Uus punkt siin</p>
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Pealkiri, nt. Koguva sadam"
+        className="w-full rounded-xl border border-input bg-background px-4 py-3 outline-none focus:border-accent"
+      />
+      <p className="text-xs text-muted-foreground">
+        AI lisab hiljem ise kuni 2-lauselise kirjelduse ja pildi.
+      </p>
+      <div className="flex gap-2">
+        <button
+          onClick={onClose}
+          className="flex-1 rounded-xl bg-secondary px-4 py-3 font-medium text-secondary-foreground"
+        >
+          Katkesta
+        </button>
+        <button
+          disabled={title.trim().length < 2 || add.isPending}
+          onClick={submit}
+          className="flex-1 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-40"
+        >
+          {add.isPending ? "Salvestan…" : "Salvesta"}
+        </button>
+      </div>
     </div>
   );
 }
