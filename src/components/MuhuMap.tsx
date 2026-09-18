@@ -803,7 +803,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
       existing.setLatLngs(lines);
     } else {
       restoredSegmentsRef.current = L.polyline(lines, {
-          color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 9, opacity: 1,
+          color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 11, opacity: 1,
           lineCap: "round", lineJoin: "round", renderer,
         }).addTo(layer);
     }
