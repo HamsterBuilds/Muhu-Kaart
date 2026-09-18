@@ -87,6 +87,8 @@ function escapeHtml(value: string) {
 }
 
 export default function MuhuMap({ points, tracks, savedSegments, me, tracking = false, onSelect, onCoverage, diagnosticRoads }: Props) {
+  const trackingRef = useRef(tracking);
+  trackingRef.current = tracking;
   const restoredSegmentsRef = useRef<LeafletPolyline | null>(null);
   const coverageCallback = useRef(onCoverage);
   coverageCallback.current = onCoverage;
@@ -214,7 +216,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
           // Without an active GPS fix there is no mobile road matching to do.
           // Keep the layer empty while the map is only being browsed; the
           // first fix below triggers a redraw and loads the needed geometry.
-          if (compactViewport && !tracking) {
+          if (compactViewport && !trackingRef.current) {
             done(undefined, canvas);
             return canvas;
           }
@@ -614,7 +616,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
         // Raster OSM tiles are sufficient while a phone is only being panned.
         // Fetch detailed Overpass geometry on mobile only around an active GPS
         // fix, where it is needed for precise road matching.
-        if (compactViewport && !lastFixRef.current) return;
+        if (compactViewport && !tracking) return;
         const mode = modeForZoom(m.getZoom());
         if (!mode || roadsRef.current.size >= MAX_ROADS) return;
         const b = m.getBounds().pad(VIEW_PAD);
@@ -954,6 +956,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
       }
     }
     // Laadi teed ümber kasutaja asukoha, isegi kui vaade on mujal või äpp taustal
+    if (!tracking) return;
     const lastCorr = corridorRef.current;
     if (
       !lastCorr ||
@@ -994,7 +997,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
     }
     matchAnchorRef.current = pt;
     processPointRef.current(pt, true);
-  }, [me, mapReady]);
+  }, [me, mapReady, tracking]);
 
   useEffect(() => {
     depthRef.current?.setEnabled(showBuildingDepth && !lightMap);
