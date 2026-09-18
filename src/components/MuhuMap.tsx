@@ -138,6 +138,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   const vectorRoadRemoveRef = useRef<(key: string) => void>(() => {});
   const vectorRoadRefreshRef = useRef<() => void>(() => {});
   const lastVectorIndexFixRef = useRef<[number, number] | null>(null);
+  const meRenderFrameRef = useRef<number | null>(null);
 
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
@@ -843,31 +844,38 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const layer = layersRef.current.me;
     const renderer = lineRendererRef.current;
     if (!L || !layer || !renderer) return;
-    layer.clearLayers();
-    if (!me) return;
-    if (me.accuracy && me.accuracy > 1) {
-      L.circle([me.lat, me.lng], {
+    if (meRenderFrameRef.current !== null) cancelAnimationFrame(meRenderFrameRef.current);
+    meRenderFrameRef.current = requestAnimationFrame(() => {
+      meRenderFrameRef.current = null;
+      layer.clearLayers();
+      if (!me) return;
+      if (me.accuracy && me.accuracy > 1) {
         // Very noisy fixes can report a huge radius that covers several
         // streets. Keep the UI useful without treating that uncertainty as
         // proof that every road inside it was travelled.
-        radius: Math.min(me.accuracy, MAX_VISIBLE_ACCURACY_METERS),
-        color: "#2f6fd0",
-        weight: 1,
-        opacity: 0.35,
+        L.circle([me.lat, me.lng], {
+          radius: Math.min(me.accuracy, MAX_VISIBLE_ACCURACY_METERS),
+          color: "#2f6fd0",
+          weight: 1,
+          opacity: 0.35,
+          fillColor: "#2f6fd0",
+          fillOpacity: 0.08,
+          interactive: false,
+          renderer,
+        }).addTo(layer);
+      }
+      L.circleMarker([me.lat, me.lng], {
+        radius: 7,
+        color: "#ffffff",
+        weight: 3,
         fillColor: "#2f6fd0",
-        fillOpacity: 0.08,
-        interactive: false,
+        fillOpacity: 1,
         renderer,
       }).addTo(layer);
-    }
-    L.circleMarker([me.lat, me.lng], {
-      radius: 7,
-      color: "#ffffff",
-      weight: 3,
-      fillColor: "#2f6fd0",
-      fillOpacity: 1,
-      renderer,
-    }).addTo(layer);
+    });
+    return () => {
+      if (meRenderFrameRef.current !== null) cancelAnimationFrame(meRenderFrameRef.current);
+    };
   }, [me, mapReady]);
 
   // Asukoha uuendused: tee lähedal liigumine värvib teelõigud roheliseks
