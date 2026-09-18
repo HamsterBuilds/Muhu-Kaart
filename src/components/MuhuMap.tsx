@@ -530,15 +530,19 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         for (const key of replayCells) {
           for (const pt of savedCoverageSpatialRef.current.get(key) ?? []) processPoint(pt);
         }
-        // Rebuild timestamp-bounded historical trips when their road tiles
-        // become available later (initial load, reconnect, or map pan).
-        for (const track of tracksRef.current) {
-          for (let i = 1; i < track.length; i++) {
-            const from = track[i - 1]!, to = track[i]!;
-            const fromKey = `${Math.floor(from[0] / ROAD_INDEX_DEG)}:${Math.floor(from[1] / ROAD_INDEX_DEG)}`;
-            const toKey = `${Math.floor(to[0] / ROAD_INDEX_DEG)}:${Math.floor(to[1] / ROAD_INDEX_DEG)}`;
-            if (!replayCells.has(fromKey) && !replayCells.has(toKey)) continue;
-            for (const pt of gapPathRef.current(from, to)) processPoint(pt, true);
+        // Desktop can rebuild timestamp-bounded historical trips when new
+        // road geometry arrives. On phones this is needlessly expensive while
+        // panning: persisted green segments are already rendered separately,
+        // and live matching is driven by the active GPS corridor below.
+        if (!compactViewport) {
+          for (const track of tracksRef.current) {
+            for (let i = 1; i < track.length; i++) {
+              const from = track[i - 1]!, to = track[i]!;
+              const fromKey = `${Math.floor(from[0] / ROAD_INDEX_DEG)}:${Math.floor(from[1] / ROAD_INDEX_DEG)}`;
+              const toKey = `${Math.floor(to[0] / ROAD_INDEX_DEG)}:${Math.floor(to[1] / ROAD_INDEX_DEG)}`;
+              if (!replayCells.has(fromKey) && !replayCells.has(toKey)) continue;
+              for (const pt of gapPathRef.current(from, to)) processPoint(pt, true);
+            }
           }
         }
       };
@@ -600,6 +604,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       const refreshQueue = () => {
         const m = mapRef.current;
         if (!m) return;
+        // Raster OSM tiles are sufficient while a phone is only being panned.
+        // Fetch detailed Overpass geometry on mobile only around an active GPS
+        // fix, where it is needed for precise road matching.
+        if (compactViewport && !lastFixRef.current) return;
         const mode = modeForZoom(m.getZoom());
         if (!mode || roadsRef.current.size >= MAX_ROADS) return;
         const b = m.getBounds().pad(VIEW_PAD);
@@ -812,9 +820,11 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       spatial.set(key, list);
     }
     // Rebuild only within timestamp-bounded trips. Never infer between visits.
-    for (const track of tracks) {
-      for (let i = 1; i < track.length; i++) {
-        for (const pt of gapPathRef.current(track[i - 1]!, track[i]!)) processPointRef.current(pt, true);
+    if (!window.matchMedia("(max-width: 700px)").matches) {
+      for (const track of tracks) {
+        for (let i = 1; i < track.length; i++) {
+          for (const pt of gapPathRef.current(track[i - 1]!, track[i]!)) processPointRef.current(pt, true);
+        }
       }
     }
     // Tiles may have loaded before history arrived and skipped their road index.
