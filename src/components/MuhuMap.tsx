@@ -781,17 +781,22 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     // Every stored segment is independently proven against mapped road
     // geometry. Keep them as disconnected pairs, but render them through one
     // Leaflet object instead of one object per segment.
-    restoredSegmentsRef.current?.remove();
     if (!savedSegments.length) {
+      restoredSegmentsRef.current?.remove();
       restoredSegmentsRef.current = null;
       return;
     }
     const lines: [number, number][][] = savedSegments.map((s) => [[s.aLat, s.aLng], [s.bLat, s.bLng]]);
-    const poly = L.polyline(lines, {
-        color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 9, opacity: 1,
-        lineCap: "round", lineJoin: "round", renderer,
-      }).addTo(layer);
-    restoredSegmentsRef.current = poly;
+    const existing = restoredSegmentsRef.current;
+    if (existing) {
+      existing.setStyle({ color: lightMap ? "#22a447" : TRAVELED_COLOR });
+      existing.setLatLngs(lines);
+    } else {
+      restoredSegmentsRef.current = L.polyline(lines, {
+          color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 9, opacity: 1,
+          lineCap: "round", lineJoin: "round", renderer,
+        }).addTo(layer);
+    }
   }, [savedSegments, mapReady, lightMap]);
 
   // GPS tracks are coverage input only, never a separate blue route overlay.
