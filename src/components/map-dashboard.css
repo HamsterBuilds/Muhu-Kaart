@@ -390,6 +390,8 @@
 .map-screen .map-mini-preview .leaflet-tile-pane{filter:none}
 @media(max-width:480px){.map-right-tools{bottom:155px;right:18px}}
 @media(max-width:700px){
+  /* Filtering the full raster tile pane makes every touch pan expensive. */
+  .map-screen .leaflet-tile-pane { filter: none; }
   /* Canvas drop-shadows force a full filtered repaint on every touch pan. */
   .map-screen .leaflet-overlay-pane canvas,
   .map-screen .leaflet-saved-road-coverage-pane canvas { filter: none; }
