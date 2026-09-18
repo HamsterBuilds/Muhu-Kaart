@@ -10,7 +10,14 @@ type Point = { id: string; lat: number; lng: number; t: string; segment?: Covera
 type Store = { points: Record<string, Point>; pending: Record<string, Point> };
 const key = (uid: string) => `muhu-road-coverage-v1:${uid}`;
 const pointId = (lat: number, lng: number) => `${Math.round(lat / 0.000045)}_${Math.round(lng / 0.00008)}`;
-const segmentId = (s: CoverageSegment) => `segment_${[`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_")}`;
+// GPS jitter changes the clipped endpoints by metres on every pass. Use the
+// same ~5 m spatial cells as raw fixes so walking the same road repeatedly
+// overwrites one canonical coverage record instead of growing the database.
+const segmentCell = (lat: number, lng: number) =>
+  `${Math.round(lat / 0.000045)}_${Math.round(lng / 0.00008)}`;
+const segmentId = (s: CoverageSegment) => `segment_${[segmentCell(s.aLat, s.aLng), segmentCell(s.bLat, s.bLng)].sort().join("_")}`;
+const legacySegmentId = (s: CoverageSegment) =>
+  `segment_${[`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_")}`;
 const validSegment = (s: CoverageSegment | undefined): s is CoverageSegment => !!s && s.coverageVersion === 4 && s.traversableRoad === true && [s.aLat, s.aLng, s.bLat, s.bLng].every(Number.isFinite);
 const rawTracks = (data: Store) => {
   const points = Object.values(data.points).filter((p) => !p.segment && p.verifiedTime).sort((a, b) => a.t.localeCompare(b.t));
@@ -74,12 +81,15 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; reco
     if (!state || state.uid !== firebaseAuth.currentUser?.uid) return;
     if (segment && !validSegment(segment)) return;
     const id = segment ? segmentId(segment) : pointId(pt[0], pt[1]);
-    const existing = state.data.points[id];
+    const oldId = segment ? legacySegmentId(segment) : id;
+    const storageId = segment && state.data.points[oldId] ? oldId : id;
+    const existing = state.data.points[id] ?? state.data.points[oldId];
     // Preserve legacy history, but revalidate its geometry against car roads.
     if (existing && (!segment || validSegment(existing.segment))) return;
     const p = { id, lat: pt[0], lng: pt[1], t: new Date().toISOString(), ...(segment ? { segment } : { verifiedTime: true }) };
-    state.data.points[id] = p;
-    state.data.pending[id] = p;
+    if (storageId !== id) p.id = storageId;
+    state.data.points[storageId] = p;
+    state.data.pending[storageId] = p;
     persist();
     if (segment) setSegments((previous) => [...previous, segment]);
     else setTracks((previous) => [...previous, [pt]]);
