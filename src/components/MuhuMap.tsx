@@ -785,7 +785,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const lines: [number, number][][] = savedSegments.map((s) => [[s.aLat, s.aLng], [s.bLat, s.bLng]]);
     const poly = L.polyline(lines, {
         color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 9, opacity: 1,
-        lineCap: "butt", lineJoin: "round", renderer,
+        lineCap: "square", lineJoin: "round", renderer,
       }).addTo(layer);
     restoredSegmentsRef.current = poly;
   }, [savedSegments, mapReady, lightMap]);
