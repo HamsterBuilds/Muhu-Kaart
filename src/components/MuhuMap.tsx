@@ -195,7 +195,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
         maxZoom: 19,
-      }).addTo(map);
+        updateWhenIdle: true,
+  updateWhenZooming: false,
+  keepBuffer: compactViewport ? 0 : 1,
+}).addTo(map);
 
       // Punased teed tulevad OSM-i vektorplaatidest, mitte ebakindlast suurest
       // Overpassi päringust. Plaadid laaditakse automaatselt igal liigutamisel.
