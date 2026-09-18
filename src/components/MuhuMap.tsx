@@ -57,9 +57,11 @@ const TRAVELED_COLOR = "#16f6a0";
 const ROAD_HIT_METERS = 3;
 const MAX_BATCH_CELLS = 12;
 const MAX_WORKERS = 1;
-const VIEW_PAD = 0.5;
+// Keep the pan/zoom fetch corridor close to the viewport. A half-degree pad
+// pulled in thousands of roads on phones before the user could finish a pan.
+const VIEW_PAD = 0.08;
 const ROADS_PER_CHUNK = 300;
-const MAX_ROADS = 40000;
+const MAX_ROADS = 16000;
 const CORRIDOR_TRIGGER_METERS = 120;
 const ROAD_INDEX_DEG = 0.01;
 const MAX_VISIBLE_ACCURACY_METERS = 45;
