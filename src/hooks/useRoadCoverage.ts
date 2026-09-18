@@ -145,8 +145,16 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; reco
     };
     void flush();
     const timer = window.setInterval(() => void flush(), 5000);
+    const flushBeforeSleep = () => { void flush(); };
     window.addEventListener("online", flush);
-    return () => { clearInterval(timer); window.removeEventListener("online", flush); };
+    window.addEventListener("visibilitychange", flushBeforeSleep);
+    window.addEventListener("pagehide", flushBeforeSleep);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("online", flush);
+      window.removeEventListener("visibilitychange", flushBeforeSleep);
+      window.removeEventListener("pagehide", flushBeforeSleep);
+    };
   }, [owner, persist]);
 
   return { localCoverage: tracks, coverageSegments: segments, rememberCoverage: remember, coverageOwner: owner, syncStatus };

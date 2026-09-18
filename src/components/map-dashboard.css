@@ -2,6 +2,8 @@
   background: #0b1822;
   color: #f2f7ff;
   font-family: Inter, Arial, sans-serif;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .map-screen .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.65) saturate(0.5);
@@ -374,6 +376,9 @@
 .map-screen button:focus-visible {
   outline: 2px solid #7dcbff;
   outline-offset: 3px;
+}
+.map-screen button {
+  touch-action: manipulation;
 }
 .map-right-tools{position:absolute;right:18px;bottom:245px;z-index:750;display:grid;gap:7px;width:45px}
 .map-view-controls{border:1px solid #829bb466;border-radius:23px;padding:6px;background:linear-gradient(120deg,#162c3bef,#0b1821f2);box-shadow:0 5px 20px #0008;display:grid;gap:5px}

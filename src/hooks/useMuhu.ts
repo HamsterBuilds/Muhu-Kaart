@@ -117,7 +117,8 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
     (async () => {
       try {
         if (Capacitor.isNativePlatform()) {
-          const id = await BackgroundGeolocation.addWatcher(
+          try {
+            const id = await BackgroundGeolocation.addWatcher(
             {
               backgroundTitle: "Muhu kaart",
               backgroundMessage: "Asukoha jälgimine töötab taustal",
@@ -135,11 +136,26 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
               if (location) handleFix(location.latitude, location.longitude, location.accuracy);
             },
           );
-          if (cancelled) {
-            void BackgroundGeolocation.removeWatcher({ id });
-            return;
+            if (cancelled) {
+              void BackgroundGeolocation.removeWatcher({ id });
+              return;
+            }
+            clear = () => void BackgroundGeolocation.removeWatcher({ id });
+          } catch (backgroundError) {
+            // Keep foreground tracking alive when an older/partial APK lacks
+            // the native background watcher implementation.
+            console.warn("Tausta-asukoht pole saadaval, kasutan esiplaani GPS-i:", backgroundError);
+            const { Geolocation } = await import("@capacitor/geolocation");
+            await Geolocation.requestPermissions().catch(() => undefined);
+            const id = await Geolocation.watchPosition(
+              { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+              (p, e) => {
+                if (!cancelled && !e && p) handleFix(p.coords.latitude, p.coords.longitude, p.coords.accuracy);
+              },
+            );
+            if (cancelled) void Geolocation.clearWatch({ id });
+            else clear = () => void Geolocation.clearWatch({ id });
           }
-          clear = () => void BackgroundGeolocation.removeWatcher({ id });
         } else {
           const { Geolocation } = await import("@capacitor/geolocation");
           const id = await Geolocation.watchPosition(
