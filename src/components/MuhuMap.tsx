@@ -204,6 +204,13 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           const size = 256;
           canvas.width = size;
           canvas.height = size;
+          // The raster OSM layer already shows streets on phones. Avoid
+          // decoding and painting a second full vector street layer there;
+          // Overpass geometry below still supplies the GPS matching index.
+          if (compactViewport) {
+            done(undefined, canvas);
+            return canvas;
+          }
           const url = VECTOR_ROAD_TILES
             .replace("{z}", String(coords.z))
             .replace("{x}", String(coords.x))
@@ -554,7 +561,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         try {
           const roads = await fetchRoadsForCells(batch, abortAllRef.current.signal, fetchMode);
           for (const c of batch) cellStateRef.current.set(c.key, { ok: true, ts: Date.now() });
-          addRoads(roads);
+          addRoads(roads, !compactViewport);
         } catch {
           if (!abortAllRef.current.signal.aborted) {
             for (const c of batch) cellStateRef.current.set(c.key, { ok: false, ts: Date.now() });
