@@ -185,6 +185,27 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
 
   const start = useCallback(async () => {
     if (!code) return;
+    // Ask before switching the UI into tracking mode. The background plugin
+    // also checks permissions when its watcher starts, but doing it here gives
+    // the user an immediate prompt and prevents a false "tracking active"
+    // state when Android rejected the request.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Geolocation } = await import("@capacitor/geolocation");
+        let permission = await Geolocation.checkPermissions();
+        if (permission.location !== "granted") {
+          permission = await Geolocation.requestPermissions();
+        }
+        if (permission.location !== "granted") {
+          toast.error("Asukoha luba on vajalik. Vali Androidi seadetes ‘Luba alati’ ja ‘Täpne asukoht’.");
+          return;
+        }
+      } catch (error) {
+        console.warn("Asukoha loa kontroll ebaõnnestus:", error);
+        toast.error("Asukoha luba ei ole saadaval. Kontrolli rakenduse õigusi Androidi seadetes.");
+        return;
+      }
+    }
     // Preserve old pending trip data by importing it into deduplicated coverage.
     try {
       const saved = JSON.parse(localStorage.getItem("muhu-track-pending-v1") ?? "null");
