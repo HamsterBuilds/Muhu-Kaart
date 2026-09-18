@@ -210,6 +210,13 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           const size = 256;
           canvas.width = size;
           canvas.height = size;
+          // Without an active GPS fix there is no mobile road matching to do.
+          // Keep the layer empty while the map is only being browsed; the
+          // first fix below triggers a redraw and loads the needed geometry.
+          if (compactViewport && !lastFixRef.current) {
+            done(undefined, canvas);
+            return canvas;
+          }
           const url = VECTOR_ROAD_TILES
             .replace("{z}", String(coords.z))
             .replace("{x}", String(coords.x))
