@@ -373,10 +373,11 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             for (const id of roadSpatialRef.current.get(`${y + dy}:${x + dx}`) ?? []) candidates.add(id);
           }
         }
-        let nearest: { a: [number, number]; b: [number, number]; motorRoad: boolean } | null = null;
-        let nearestDistance = roadHitMetersRef.current;
-        let secondDistance = Infinity;
-        let nearestRoadId = "";
+        type RoadHit = { a: [number, number]; b: [number, number]; motorRoad: boolean; distance: number; roadId: string };
+        let nearestMotor: RoadHit | null = null;
+        let secondMotorDistance = Infinity;
+        let nearestConnector: RoadHit | null = null;
+        let secondConnectorDistance = Infinity;
         const seenSegments = new Set<string>();
         for (const id of candidates) {
           const box = roadBoxRef.current.get(id);
@@ -396,21 +397,34 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             if (seenSegments.has(segmentKey)) continue;
             seenSegments.add(segmentKey);
             const distance = segmentDistanceMeters(pt, road.coords[i]!, road.coords[i + 1]!);
-            if (distance < nearestDistance) {
-              if (nearest && id !== nearestRoadId) secondDistance = nearestDistance;
-              const a = road.coords[i]!;
-              const b = road.coords[i + 1]!;
-              nearestDistance = distance;
-              nearest = { a, b, motorRoad: road.motorRoad !== false };
-              nearestRoadId = id;
-            } else if (id !== nearestRoadId && distance < secondDistance) {
-              secondDistance = distance;
+            const motorRoad = road.motorRoad !== false;
+            const hit: RoadHit = { a: road.coords[i]!, b: road.coords[i + 1]!, motorRoad, distance, roadId: id };
+            // Prefer a mapped motor road over a nearby footway/driveway. GPS
+            // accuracy often overlaps both, and choosing only the absolute
+            // nearest line paints the wrong geometry green beside the road.
+            if (motorRoad) {
+              if (!nearestMotor || distance < nearestMotor.distance) {
+                if (nearestMotor && nearestMotor.roadId !== id) secondMotorDistance = Math.min(secondMotorDistance, nearestMotor.distance);
+                nearestMotor = hit;
+              } else if (nearestMotor.roadId !== id) {
+                secondMotorDistance = Math.min(secondMotorDistance, distance);
+              }
+            } else if (!nearestConnector || distance < nearestConnector.distance) {
+              if (nearestConnector && nearestConnector.roadId !== id) secondConnectorDistance = Math.min(secondConnectorDistance, nearestConnector.distance);
+              nearestConnector = hit;
+            } else if (nearestConnector.roadId !== id) {
+              secondConnectorDistance = Math.min(secondConnectorDistance, distance);
             }
           }
         }
         // An uncertain fix between neighbouring roads is not proof of a visit.
-        const hitLimit = nearest?.motorRoad ? roadHitMetersRef.current : Math.min(5, roadHitMetersRef.current);
-        if (nearest && (nearest.motorRoad || allowConnector) && nearestDistance <= hitLimit && secondDistance - nearestDistance >= 1.5) {
+        // A motor road wins whenever it is inside the GPS uncertainty radius;
+        // connectors are only a fallback when no motor road is plausible.
+        const nearest = nearestMotor ?? (allowConnector ? nearestConnector : null);
+        const nearestDistance = nearest?.distance ?? Infinity;
+        const secondDistance = nearestMotor ? secondMotorDistance : secondConnectorDistance;
+        const hitLimit = nearestMotor ? roadHitMetersRef.current : Math.min(5, roadHitMetersRef.current);
+        if (nearest && nearestDistance <= hitLimit && secondDistance - nearestDistance >= 1.5) {
           const { a, b, motorRoad } = nearest;
           const clipped = clippedSegmentAtPoint(pt, a, b);
           coverageCallback.current(pt, { aLat: clipped.a[0], aLng: clipped.a[1], bLat: clipped.b[0], bLng: clipped.b[1], motorRoad, traversableRoad: true, coverageVersion: 4 });
