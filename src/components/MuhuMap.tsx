@@ -166,6 +166,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         maxZoom: 19,
         zoomControl: false,
         preferCanvas: true,
+        inertia: false,
         fadeAnimation: false,
         zoomAnimation: false,
         markerZoomAnimation: false,
