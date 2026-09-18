@@ -750,6 +750,13 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const layer = layersRef.current.points;
     const renderer = lineRendererRef.current;
     if (!L || !layer || !renderer) return;
+    // Large groups can contain thousands of point markers. Rendering every
+    // marker and binding a tooltip makes each mobile canvas pan expensive;
+    // the road coverage and current-location marker remain visible there.
+    if (window.matchMedia("(max-width: 700px)").matches) {
+      layer.clearLayers();
+      return;
+    }
     layer.clearLayers();
     for (const p of points) {
       const green = p.mine || p.visited;
