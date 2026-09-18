@@ -9,6 +9,8 @@ import { firebaseAuth } from "@/lib/firebase";
 
 /** Tausta-asukohajälgimine (Android foreground service); veebil pole implementatsiooni. */
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>("BackgroundGeolocation");
+const requestBackgroundPermission = () =>
+  (BackgroundGeolocation as BackgroundGeolocationPlugin & { requestBackgroundPermission?: () => Promise<void> }).requestBackgroundPermission?.();
 export type Position = { lat: number; lng: number; accuracy?: number };
 
 function usableFix(lat: number, lng: number, accuracy?: number): Position | null {
@@ -200,6 +202,7 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
           toast.error("Asukoha luba on vajalik. Vali Androidi seadetes ‘Luba alati’ ja ‘Täpne asukoht’.");
           return;
         }
+        await requestBackgroundPermission();
       } catch (error) {
         console.warn("Asukoha loa kontroll ebaõnnestus:", error);
         toast.error("Asukoha luba ei ole saadaval. Kontrolli rakenduse õigusi Androidi seadetes.");
