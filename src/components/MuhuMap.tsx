@@ -154,6 +154,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       const L = await import("leaflet");
       if (cancelled || !containerRef.current || mapRef.current) return;
       leafletRef.current = L;
+      const compactViewport = window.matchMedia("(max-width: 700px)").matches;
 
       const map = L.map(containerRef.current, {
         center: MUHU_CENTER,
@@ -162,13 +163,18 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         maxZoom: 19,
         zoomControl: false,
         preferCanvas: true,
+        fadeAnimation: false,
+        zoomAnimation: false,
+        markerZoomAnimation: false,
       });
 
       // Ühine canvas-renderdaja polstriga: jooned ei lõigataks vaate äärtel ära
       // ja suur maht renderdatakse sujuvalt ühel lõuendil
-      buildingDepth = createBuildingDepthLayer(L, map);
-      depthRef.current = buildingDepth;
-      if (miniatureRef.current) {
+      if (!compactViewport) {
+        buildingDepth = createBuildingDepthLayer(L, map);
+        depthRef.current = buildingDepth;
+      }
+      if (!compactViewport && miniatureRef.current) {
         miniature = L.map(miniatureRef.current, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false });
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19}).addTo(miniature);
         const syncMiniature = () => miniature?.setView(map.getCenter(), Math.max(3,map.getZoom()-3), {animate:false});
@@ -315,8 +321,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         maxNativeZoom: 14,
         maxZoom: 19,
         opacity: 0,
-        updateWhenIdle: false,
-        keepBuffer: 0,
+        updateWhenIdle: true,
+        keepBuffer: 1,
         updateWhenZooming: false,
       }).on("tileunload", (event: { coords: { x: number; y: number; z: number } }) => {
         vectorRoadRemoveRef.current(`${event.coords.z}:${event.coords.x}:${event.coords.y}`);

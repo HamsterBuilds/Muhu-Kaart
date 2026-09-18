@@ -389,6 +389,10 @@
 .map-mini-preview>div{height:100%;width:100%;pointer-events:none}
 .map-screen .map-mini-preview .leaflet-tile-pane{filter:none}
 @media(max-width:480px){.map-right-tools{bottom:155px;right:18px}}
+@media(max-width:700px){
+  .map-mini-preview { display:none; }
+  .map-view-controls button:first-child { display:none; }
+}
 .map-identity-copy {
   line-height: 1.25;
 }
