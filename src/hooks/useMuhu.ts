@@ -90,6 +90,7 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
   const [liveTrack, setLiveTrack] = useState<[number, number][]>([]);
   const [trackingPos, setTrackingPos] = useState<Position | null>(null);
   const last = useRef<Position | null>(null);
+  const lastLiveTrackRender = useRef(0);
 
   // Auth and the app shell can initialize in either order; resume a session
   // once the signed-in code becomes available after a cold app launch.
@@ -108,7 +109,11 @@ export function useTracking(code: string | null, rememberCoverage: (point: [numb
     // One durable sample per spatial cell, never a new timestamp/random document
     // for every lap. The map separately remembers canonical road geometry.
     rememberCoverage([lat, lng]);
-    setLiveTrack((p) => [...p.slice(-1023), [lat, lng] as [number, number]]);
+    const now = Date.now();
+    if (now - lastLiveTrackRender.current >= 2_000) {
+      lastLiveTrackRender.current = now;
+      setLiveTrack((p) => [...p.slice(-1023), [lat, lng] as [number, number]]);
+    }
   }, [rememberCoverage]);
 
   // Asukohavaatleja: Androidil BackgroundGeolocation (töötab taustal), mujal Geolocation
