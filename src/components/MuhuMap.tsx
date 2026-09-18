@@ -802,6 +802,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
   // tihendatakse ~5 m ruudustikku, seega sama tee korduv läbimine ei kasvata
   // töömahtu ega tekita kattuvaid rohelisi kihte.
   useEffect(() => {
+    // Mobile does not render or rebuild historical raw tracks: its persisted
+    // road segments are already drawn by the coverage layer, while live GPS
+    // matching is handled directly by the location effect below.
+    if (window.matchMedia("(max-width: 700px)").matches) return;
     const coverage = savedCoverageRef.current;
     const spatial = savedCoverageSpatialRef.current;
     const added: [number, number][] = [];
