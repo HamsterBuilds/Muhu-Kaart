@@ -10,6 +10,10 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == userId;
     }
 
+    match /users/{userId}/groups/{groupId} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
     match /groups/{groupId} {
       allow read: if signedIn();
       allow create: if signedIn();
@@ -33,12 +37,30 @@ service cloud.firestore {
     }
 
     match /tracks/{trackId} {
-      allow read, write: if signedIn() && resource.data.userId == request.auth.uid;
+      // Coverage uses a deterministic per-user document. The explicit ID
+      // check also lets the first merge write pass when the document does not
+      // exist yet; resource.data is unavailable during a create.
+      allow read: if signedIn() && (
+        resource.data.userId == request.auth.uid || trackId == 'coverage-' + request.auth.uid
+      );
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if signedIn() && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
 
     match /tracks/{trackId}/points/{trackPointId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn() && (
+        get(/databases/$(database)/documents/tracks/$(trackId)).data.userId == request.auth.uid
+        || trackId == 'coverage-' + request.auth.uid
+      );
+      allow create, update: if signedIn() && (
+        get(/databases/$(database)/documents/tracks/$(trackId)).data.userId == request.auth.uid
+        || trackId == 'coverage-' + request.auth.uid
+      );
+      allow delete: if signedIn() && get(
+        /databases/$(database)/documents/tracks/$(trackId)
+      ).data.userId == request.auth.uid;
     }
   }
 }
