@@ -215,6 +215,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
             })
             .then((data) => {
               const tile = new VectorTile(new PbfReader(new Uint8Array(data)));
+              // Polygon layers are purely decorative and are expensive to
+              // decode on phones. Mobile only needs the street layer for
+              // navigation and GPS matching.
+              if (!compactViewport) {
               const land = tile.layers["land"];
               if (land) {
                 const woods: [number, number][][] = [];
@@ -251,6 +255,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                   labels.push({ point: [p.lat, p.lng], text: String(feature.properties["housenumber"]) });
                 }
                 buildingDepth?.setTile(`${coords.z}:${coords.x}:${coords.y}`, rings, labels);
+              }
               }
               const streets = tile.layers["streets"];
               if (streets) {
