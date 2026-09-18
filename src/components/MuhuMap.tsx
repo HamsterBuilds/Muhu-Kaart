@@ -616,7 +616,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
         // Raster OSM tiles are sufficient while a phone is only being panned.
         // Fetch detailed Overpass geometry on mobile only around an active GPS
         // fix, where it is needed for precise road matching.
-        if (compactViewport && !tracking) return;
+        if (compactViewport && !trackingRef.current) return;
         const mode = modeForZoom(m.getZoom());
         if (!mode || roadsRef.current.size >= MAX_ROADS) return;
         const b = m.getBounds().pad(VIEW_PAD);
