@@ -520,6 +520,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         for (let i = 1; i < fixes.length; i++) {
           for (const pt of gapPathRef.current(fixes[i - 1]!, fixes[i]!)) processPoint(pt, true);
         }
+        // A road tile can arrive after the latest GPS callback. Retry that
+        // exact fix as well, otherwise the raw point is stored but no green
+        // canonical road segment is produced until the next movement.
+        if (lastFixRef.current) processPoint(lastFixRef.current, true);
         // Uute teede puhul töötle ainult samas ruudus olevat salvestatud
         // katvust. Nii ei muutu aastatepikkuse ajaloo laadimine aeglaseks.
         for (const key of replayCells) {
