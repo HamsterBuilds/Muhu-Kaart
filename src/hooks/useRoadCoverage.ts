@@ -42,7 +42,8 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; reco
   const [segments, setSegments] = useState<CoverageSegment[]>([]);
   const current = useRef<{ uid: string; data: Store } | null>(null);
   const warned = useRef(false);
-  const persist = useCallback(() => {
+  const persistTimer = useRef<number | null>(null);
+  const persistNow = useCallback(() => {
     const state = current.current;
     if (!state) return;
     try {
@@ -52,6 +53,17 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; reco
       warned.current = true;
     }
   }, []);
+  const persist = useCallback(() => {
+    if (typeof window === "undefined" || typeof window.setTimeout !== "function") {
+      persistNow();
+      return;
+    }
+    if (persistTimer.current !== null) return;
+    persistTimer.current = window.setTimeout(() => {
+      persistTimer.current = null;
+      persistNow();
+    }, 250);
+  }, [persistNow]);
 
   useEffect(() => onAuthStateChanged(firebaseAuth, (user) => {
     let data: Store = { points: {}, pending: {} };
@@ -146,7 +158,7 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; reco
           // A legacy segment can be upgraded while its old upload is in flight.
           if (state.data.pending[p.id] === p) delete state.data.pending[p.id];
         }
-        if (current.current === state) persist();
+        if (current.current === state) persistNow();
         if (current.current === state) setSyncStatus(status(state.data, "Pilves kinnitatud · kohalikult"));
       } catch (error) {
         if (current.current === state) setSyncStatus(`Pilve salvestus ebaõnnestus: ${error instanceof Error ? error.message : String(error)}`);
@@ -155,7 +167,10 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; reco
     };
     void flush();
     const timer = window.setInterval(() => void flush(), 5000);
-    const flushBeforeSleep = () => { void flush(); };
+    const flushBeforeSleep = () => {
+      persistNow();
+      void flush();
+    };
     window.addEventListener("online", flush);
     window.addEventListener("visibilitychange", flushBeforeSleep);
     window.addEventListener("pagehide", flushBeforeSleep);
@@ -165,7 +180,7 @@ export function useRoadCoverage(cloudTracks?: { points: [number, number][]; reco
       window.removeEventListener("visibilitychange", flushBeforeSleep);
       window.removeEventListener("pagehide", flushBeforeSleep);
     };
-  }, [owner, persist]);
+  }, [owner, persist, persistNow]);
 
   return { localCoverage: tracks, coverageSegments: segments, rememberCoverage: remember, coverageOwner: owner, syncStatus };
 }
