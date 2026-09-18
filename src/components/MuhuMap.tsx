@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type {
   Map as LeafletMap,
   LayerGroup,
@@ -86,7 +86,7 @@ function escapeHtml(value: string) {
   );
 }
 
-export default function MuhuMap({ points, tracks, savedSegments, me, tracking = false, onSelect, onCoverage, diagnosticRoads }: Props) {
+function MuhuMap({ points, tracks, savedSegments, me, tracking = false, onSelect, onCoverage, diagnosticRoads }: Props) {
   const trackingRef = useRef(tracking);
   trackingRef.current = tracking;
   const restoredSegmentsRef = useRef<LeafletPolyline | null>(null);
@@ -1088,3 +1088,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
     </div>
   );
 }
+
+// The point sheet lives above the map. Keep its open state and text input from
+// reconciling the Leaflet tree on every keystroke or sheet toggle.
+export default memo(MuhuMap);
