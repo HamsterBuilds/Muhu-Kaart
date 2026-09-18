@@ -334,7 +334,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           return canvas;
         }
       }
-      const redRoadTiles = new RedRoadTiles({
+      const redRoadTiles = compactViewport ? null : new RedRoadTiles({
         tileSize: 256,
         minZoom: 11,
         maxNativeZoom: 14,
@@ -347,13 +347,13 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         vectorRoadRemoveRef.current(`${event.coords.z}:${event.coords.x}:${event.coords.y}`);
         buildingDepth?.removeTile(`${event.coords.z}:${event.coords.x}:${event.coords.y}`);
       }).addTo(map);
-      vectorRoadRefreshRef.current = () => redRoadTiles.redraw();
+      vectorRoadRefreshRef.current = () => redRoadTiles?.redraw();
       // GPS võib jõuda enne Leafleti kaardi initsialiseerimist. Sel juhul tuleb
       // juba nähtavad plaadid uuesti dekodeerida, et nende teed jõuaksid ka
       // rohelise 2 m lähedusindeksisse.
       if (lastFixRef.current) {
         lastVectorIndexFixRef.current = lastFixRef.current;
-        redRoadTiles.redraw();
+        redRoadTiles?.redraw();
       }
 
       const roadsLayer = L.layerGroup().addTo(map);
@@ -551,7 +551,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       if (diagnosticRoads?.length) addRoads(diagnosticRoads, false);
       // Alles nüüd on nii nähtava punase kihi renderdaja kui 2 m rohelise
       // lähedusindeksi vastuvõtja olemas. See on oluline esimesel GPS-fixil.
-      redRoadTiles.redraw();
+      redRoadTiles?.redraw();
 
       // Keep all road sources as thick as saved green coverage at every zoom.
       const applyRoadWidth = () => {
@@ -666,7 +666,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         for (const [key, state] of cellStateRef.current) {
           if (!state.ok) cellStateRef.current.delete(key);
         }
-        redRoadTiles.redraw();
+        redRoadTiles?.redraw();
         refreshQueue();
         if (lastFixRef.current) corridorFetch(lastFixRef.current);
       };
