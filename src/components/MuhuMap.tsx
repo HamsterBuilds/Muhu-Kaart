@@ -62,6 +62,7 @@ const ROADS_PER_CHUNK = 300;
 const MAX_ROADS = 40000;
 const CORRIDOR_TRIGGER_METERS = 120;
 const ROAD_INDEX_DEG = 0.01;
+const MAX_VISIBLE_ACCURACY_METERS = 45;
 const VECTOR_ROAD_TILES = "https://vector.openstreetmap.org/shortbread_v1/{z}/{x}/{y}.mvt";
 
 type Props = {
@@ -738,7 +739,34 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const layer = layersRef.current.traveled;
     const renderer = coverageRendererRef.current;
     if (!L || !layer || !renderer) return;
-    for (const s of savedSegments) {
+    // GPS fixes are intentionally clipped to short proven pieces. Join only
+    // tiny visual gaps between adjacent pieces; this does not infer new road
+    // coverage and avoids the dotted green appearance after upload/reload.
+    const joined: CoverageSegment[] = [];
+    const closeEnough = (a: [number, number], b: [number, number]) =>
+      distanceMeters({ lat: a[0], lng: a[1] }, { lat: b[0], lng: b[1] }) <= 10;
+    for (const segment of savedSegments) {
+      const current: [[number, number], [number, number]] = [[segment.aLat, segment.aLng], [segment.bLat, segment.bLng]];
+      const previous = joined.at(-1);
+      if (previous) {
+        const pa: [number, number] = [previous.aLat, previous.aLng];
+        const pb: [number, number] = [previous.bLat, previous.bLng];
+        if (closeEnough(pb, current[0])) {
+          previous.bLat = current[1][0]; previous.bLng = current[1][1]; continue;
+        }
+        if (closeEnough(pb, current[1])) {
+          previous.bLat = current[0][0]; previous.bLng = current[0][1]; continue;
+        }
+        if (closeEnough(pa, current[1])) {
+          previous.aLat = current[0][0]; previous.aLng = current[0][1]; continue;
+        }
+        if (closeEnough(pa, current[0])) {
+          previous.aLat = current[1][0]; previous.aLng = current[1][1]; continue;
+        }
+      }
+      joined.push({ ...segment });
+    }
+    for (const s of joined) {
       const key = [`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_");
       if (restoredSegmentsRef.current.has(key)) continue;
       const poly = L.polyline([[s.aLat, s.aLng], [s.bLat, s.bLng]], {
@@ -823,7 +851,10 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     if (!me) return;
     if (me.accuracy && me.accuracy > 1) {
       L.circle([me.lat, me.lng], {
-        radius: me.accuracy,
+        // Very noisy fixes can report a huge radius that covers several
+        // streets. Keep the UI useful without treating that uncertainty as
+        // proof that every road inside it was travelled.
+        radius: Math.min(me.accuracy, MAX_VISIBLE_ACCURACY_METERS),
         color: "#2f6fd0",
         weight: 1,
         opacity: 0.35,
