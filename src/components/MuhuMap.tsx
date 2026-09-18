@@ -72,6 +72,7 @@ type Props = {
   points: MapPoint[];
   tracks: [number, number][][];
   me: { lat: number; lng: number; accuracy?: number } | null;
+  tracking?: boolean;
   onSelect: (id: string) => void;
   onCoverage: (pt: [number, number], segment: CoverageSegment) => void;
   savedSegments: CoverageSegment[];
@@ -85,7 +86,7 @@ function escapeHtml(value: string) {
   );
 }
 
-export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, onCoverage, diagnosticRoads }: Props) {
+export default function MuhuMap({ points, tracks, savedSegments, me, tracking = false, onSelect, onCoverage, diagnosticRoads }: Props) {
   const restoredSegmentsRef = useRef<LeafletPolyline | null>(null);
   const coverageCallback = useRef(onCoverage);
   coverageCallback.current = onCoverage;
@@ -213,7 +214,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           // Without an active GPS fix there is no mobile road matching to do.
           // Keep the layer empty while the map is only being browsed; the
           // first fix below triggers a redraw and loads the needed geometry.
-          if (compactViewport && !lastFixRef.current) {
+          if (compactViewport && !tracking) {
             done(undefined, canvas);
             return canvas;
           }
@@ -805,6 +806,12 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
         }).addTo(layer);
     }
   }, [savedSegments, mapReady, lightMap]);
+
+  // Mobile road tiles are intentionally idle until tracking starts. Reload
+  // them once when the user turns tracking on, without redrawing on every fix.
+  useEffect(() => {
+    if (mapReady && tracking) vectorRoadRefreshRef.current();
+  }, [mapReady, tracking]);
 
   // GPS tracks are coverage input only, never a separate blue route overlay.
   // Both live and saved points color the existing road geometry below.

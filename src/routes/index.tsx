@@ -135,7 +135,7 @@ function MuhuApp() {
   return (
     <div className="map-screen relative h-dvh w-full overflow-hidden">
       <Suspense fallback={<div className="h-full w-full bg-secondary" />}>
-        <MuhuMap key={coverageOwner} points={points} tracks={tracks} savedSegments={coverageSegments} me={me} onSelect={setSelected} onCoverage={rememberCoverage} />
+        <MuhuMap key={coverageOwner} points={points} tracks={tracks} savedSegments={coverageSegments} me={me} tracking={tracking} onSelect={setSelected} onCoverage={rememberCoverage} />
       </Suspense>
 
       <MapDashboard

@@ -81,6 +81,7 @@ export default function CoverageReplay() {
       tracks={[]}
       savedSegments={segments}
       me={me}
+      tracking={true}
       onSelect={() => {}}
       onCoverage={remember}
       {...(native ? {} : { diagnosticRoads: [diagnosticRoad] })}
