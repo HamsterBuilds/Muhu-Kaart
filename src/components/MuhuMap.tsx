@@ -85,7 +85,7 @@ function escapeHtml(value: string) {
 }
 
 export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, onCoverage, diagnosticRoads }: Props) {
-  const restoredSegmentsRef = useRef(new Map<string, LeafletPolyline>());
+  const restoredSegmentsRef = useRef<LeafletPolyline | null>(null);
   const coverageCallback = useRef(onCoverage);
   coverageCallback.current = onCoverage;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -709,7 +709,8 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       roadStore.clear();
       roadBoxStore.clear();
       roadSpatialStore.clear();
-      restoredSegmentsRef.current.clear();
+      restoredSegmentsRef.current?.remove();
+      restoredSegmentsRef.current = null;
       savedCoverageRef.current.clear();
       savedCoverageSpatialRef.current.clear();
       rawFixesRef.current = [];
@@ -748,20 +749,19 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     const renderer = coverageRendererRef.current;
     if (!L || !layer || !renderer) return;
     // Every stored segment is independently proven against mapped road
-    // geometry. Never join nearby segments here: nearby parallel roads and
-    // intersections would create false diagonal coverage lines.
-    for (const s of savedSegments) {
-      const key = [`${s.aLat.toFixed(7)}_${s.aLng.toFixed(7)}`, `${s.bLat.toFixed(7)}_${s.bLng.toFixed(7)}`].sort().join("_");
-      if (restoredSegmentsRef.current.has(key)) continue;
-      const poly = L.polyline([[s.aLat, s.aLng], [s.bLat, s.bLng]], {
+    // geometry. Keep them as disconnected pairs, but render them through one
+    // Leaflet object instead of one object per segment.
+    restoredSegmentsRef.current?.remove();
+    if (!savedSegments.length) {
+      restoredSegmentsRef.current = null;
+      return;
+    }
+    const lines: [number, number][][] = savedSegments.map((s) => [[s.aLat, s.aLng], [s.bLat, s.bLng]]);
+    const poly = L.polyline(lines, {
         color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 9, opacity: 1,
         lineCap: "round", lineJoin: "round", renderer,
       }).addTo(layer);
-      restoredSegmentsRef.current.set(key, poly);
-    }
-    for (const poly of restoredSegmentsRef.current.values()) {
-      poly.setStyle({ color: lightMap ? "#22a447" : TRAVELED_COLOR });
-    }
+    restoredSegmentsRef.current = poly;
   }, [savedSegments, mapReady, lightMap]);
 
   // GPS tracks are coverage input only, never a separate blue route overlay.
