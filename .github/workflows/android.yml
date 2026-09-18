@@ -69,6 +69,8 @@ jobs:
           elif [ -n "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" ]; then
             echo '${{ secrets.GOOGLE_SERVICES_JSON_B64 }}' | base64 --decode > android/app/google-services.json
           fi
+      - name: Keep background tracking alive after app task closes
+        run: node scripts/configure-android-background-service.mjs
       - run: npx cap sync android
       - run: node scripts/configure-android-updater.mjs
       - name: Force the Firebase-registered signing certificate
