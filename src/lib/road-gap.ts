@@ -59,5 +59,17 @@ export function savedRoadGapPaths(road: Road, points: Iterable<Point>): Point[][
     if (position >= 0) anchors.push({ point, position });
   }
   anchors.sort((a, b) => a.position - b.position);
-  return anchors.slice(1).map((anchor, i) => roadGapPath([road], anchors[i]!.point, anchor.point)).filter(path => path.length);
+  return anchors.slice(1).flatMap((anchor, i) => {
+    const previous = anchors[i]!;
+    const latRef = ((previous.point[0] + anchor.point[0]) / 2) * Math.PI / 180;
+    const distance = Math.hypot(
+      (anchor.point[0] - previous.point[0]) * 110_540,
+      (anchor.point[1] - previous.point[1]) * 111_320 * Math.cos(latRef),
+    );
+    // Canonical coverage slices are about 5 m long. Adjacent slices do not
+    // need repair; only a real hole should trigger a corridor reconstruction.
+    if (distance <= 6) return [];
+    const path = roadGapPath([road], previous.point, anchor.point);
+    return path.length ? [path] : [];
+  });
 }

@@ -9,7 +9,7 @@ import type {
 } from "leaflet";
 import { Map as MapIcon, Navigation } from "lucide-react";
 import { createBuildingDepthLayer } from "@/lib/building-depth";
-import { roadGapPath } from "@/lib/road-gap";
+import { roadGapPath, savedRoadGapPaths } from "@/lib/road-gap";
 import type { CoverageSegment } from "@/hooks/useRoadCoverage";
 import { VectorTile } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
@@ -119,6 +119,11 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
   const savedCoverageRef = useRef(new Map<string, [number, number]>());
   const restoredViewRef = useRef(false);
   const savedCoverageSpatialRef = useRef(new Map<string, [number, number][]>());
+  const savedSegmentsRef = useRef(savedSegments);
+  savedSegmentsRef.current = savedSegments;
+  const savedSegmentAnchorsSpatialRef = useRef(new Map<string, [number, number][]>());
+  const repairedSavedRoadVersionsRef = useRef(new Map<string, number>());
+  const savedCoverageRepairRef = useRef<() => void>(() => {});
   const lastFixRef = useRef<[number, number] | null>(null);
   const firstFixDoneRef = useRef(false);
   const interactedRef = useRef(false);
@@ -473,6 +478,36 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
       };
       gapPathRef.current = (from, to) => roadGapPath(roadsNear(from, to), from, to, roadHitMetersRef.current);
 
+      // Restore short holes between already-saved canonical segments when the
+      // matching road geometry arrives. This follows one unambiguous mapped
+      // road; it never joins points with a straight screen-space chord.
+      const repairSavedCoverage = () => {
+        const segments = savedSegmentsRef.current;
+        if (!segments.length || !roadsRef.current.size) return;
+        const version = segments.length;
+        for (const [roadId, road] of roadsRef.current) {
+          if (repairedSavedRoadVersionsRef.current.get(roadId) === version) continue;
+          repairedSavedRoadVersionsRef.current.set(roadId, version);
+          const box = roadBoxRef.current.get(roadId) ?? roadBBox(road.coords);
+          const anchors = new Map<string, [number, number]>();
+          const y0 = Math.floor(box[0] / ROAD_INDEX_DEG) - 1;
+          const y1 = Math.floor(box[2] / ROAD_INDEX_DEG) + 1;
+          const x0 = Math.floor(box[1] / ROAD_INDEX_DEG) - 1;
+          const x1 = Math.floor(box[3] / ROAD_INDEX_DEG) + 1;
+          for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) {
+              for (const point of savedSegmentAnchorsSpatialRef.current.get(`${y}:${x}`) ?? []) {
+                anchors.set(`${point[0].toFixed(7)}:${point[1].toFixed(7)}`, point);
+              }
+            }
+          }
+          for (const path of savedRoadGapPaths(road, anchors.values())) {
+            for (const point of path) processPoint(point, true);
+          }
+        }
+      };
+      savedCoverageRepairRef.current = repairSavedCoverage;
+
       // Punased teed renderdatakse mitmikpolüjoonide rüpkgudes – ~300 teed ühes
       // lõuendi-kihis, et tuhanded teed ei maksaks tuhandeid renderdusobjekte
       const pendingChunk: [number, number][][] = [];
@@ -534,6 +569,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
         // exact fix as well, otherwise the raw point is stored but no green
         // canonical road segment is produced until the next movement.
         if (lastFixRef.current) processPoint(lastFixRef.current, true);
+        repairSavedCoverage();
         // Uute teede puhul töötle ainult samas ruudus olevat salvestatud
         // katvust. Nii ei muutu aastatepikkuse ajaloo laadimine aeglaseks.
         for (const key of replayCells) {
@@ -746,12 +782,32 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
       restoredSegmentsRef.current = null;
       savedCoverageRef.current.clear();
       savedCoverageSpatialRef.current.clear();
+      savedSegmentAnchorsSpatialRef.current.clear();
+      repairedSavedRoadVersionsRef.current.clear();
+      savedCoverageRepairRef.current = () => {};
       rawFixesRef.current = [];
       matchAnchorRef.current = null;
       cellStateStore.clear();
       firstFixDoneRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const spatial = savedSegmentAnchorsSpatialRef.current;
+    spatial.clear();
+    repairedSavedRoadVersionsRef.current.clear();
+    for (const segment of savedSegments) {
+      const point: [number, number] = [
+        (segment.aLat + segment.bLat) / 2,
+        (segment.aLng + segment.bLng) / 2,
+      ];
+      const key = `${Math.floor(point[0] / ROAD_INDEX_DEG)}:${Math.floor(point[1] / ROAD_INDEX_DEG)}`;
+      const anchors = spatial.get(key) ?? [];
+      anchors.push(point);
+      spatial.set(key, anchors);
+    }
+    if (mapReady) savedCoverageRepairRef.current();
+  }, [savedSegments, mapReady]);
 
   useEffect(() => {
     const L = leafletRef.current;
@@ -803,7 +859,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, tracking = 
       existing.setLatLngs(lines);
     } else {
       restoredSegmentsRef.current = L.polyline(lines, {
-          color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 11, opacity: 1,
+          color: lightMap ? "#22a447" : TRAVELED_COLOR, weight: 9, opacity: 1,
           lineCap: "round", lineJoin: "round", renderer,
         }).addTo(layer);
     }

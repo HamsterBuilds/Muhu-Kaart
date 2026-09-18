@@ -47,6 +47,10 @@ test("saved green-red-green holes restore along the road regardless of upload or
   assert.equal(savedRoadGapPaths(bend, [[0,0], [0.01,0.01]]).length, 0);
 });
 
+test("adjacent canonical slices do not trigger unnecessary repair", () => {
+  assert.equal(savedRoadGapPaths(bend, [[0, 0.00001], [0, 0.00005]]).length, 0);
+});
+
 test("walk connectors are traversable but remain excluded from the red car-road layer", () => {
   for (const kind of ["footway", "path", "cycleway", "steps", "pedestrian", "bridleway", "platform", "construction", "unknown"]) {
     assert.equal(roads.isMotorRoad({kind}), false, kind);
