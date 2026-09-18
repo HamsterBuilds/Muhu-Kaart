@@ -55,6 +55,7 @@ const ROAD_COLOR = "#d9453c";
 const TRAVELED_COLOR = "#16f6a0";
 /** The displayed road match remains precise; GPS accuracy can widen candidate lookup. */
 const ROAD_HIT_METERS = 3;
+const MAX_TRACKING_ACCURACY_METERS = 45;
 const MAX_BATCH_CELLS = 12;
 const MAX_WORKERS = 1;
 // Keep the pan/zoom fetch corridor close to the viewport. A half-degree pad
@@ -209,13 +210,6 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           const size = 256;
           canvas.width = size;
           canvas.height = size;
-          // The raster OSM layer already shows streets on phones. Avoid
-          // decoding and painting a second full vector street layer there;
-          // Overpass geometry below still supplies the GPS matching index.
-          if (compactViewport) {
-            done(undefined, canvas);
-            return canvas;
-          }
           const url = VECTOR_ROAD_TILES
             .replace("{z}", String(coords.z))
             .replace("{x}", String(coords.x))
@@ -306,7 +300,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                       return [latLng.lat, latLng.lng] as [number, number];
                     });
                     if (roadCoords.length < 2) continue;
-                    if (motorRoad) visibleLines.push(roadCoords);
+                    if (!compactViewport && motorRoad) visibleLines.push(roadCoords);
                     if (
                       indexForTracking &&
                       (hasSavedCoverage || (currentFix && roadCoords.some((point) =>
@@ -322,7 +316,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
                     }
                   }
                 }
-                vectorRoadRenderRef.current(`${coords.z}:${coords.x}:${coords.y}`, visibleLines);
+                if (!compactViewport) vectorRoadRenderRef.current(`${coords.z}:${coords.x}:${coords.y}`, visibleLines);
                 if (nearbyRoads.length) vectorRoadSinkRef.current(nearbyRoads);
               }
               done(undefined, canvas);
@@ -334,7 +328,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
           return canvas;
         }
       }
-      const redRoadTiles = compactViewport ? null : new RedRoadTiles({
+      const redRoadTiles = new RedRoadTiles({
         tileSize: 256,
         minZoom: 11,
         maxNativeZoom: 14,
@@ -909,7 +903,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
     // A phone may report a 7–10 m uncertainty even on a road. Snap the
     // resulting green geometry to the exact road segment, but use the current
     // reported uncertainty (capped) to decide which segment it belongs to.
-    if (!Number.isFinite(me.lat) || !Number.isFinite(me.lng) || (me.accuracy ?? 0) > 20) {
+    if (!Number.isFinite(me.lat) || !Number.isFinite(me.lng) || (me.accuracy ?? 0) > MAX_TRACKING_ACCURACY_METERS) {
       lastFixRef.current = null;
       rawFixesRef.current = [];
       matchAnchorRef.current = null;
@@ -923,7 +917,9 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       matchAnchorRef.current = null;
     }
     lastRoadFixTime.current = fixTime;
-    roadHitMetersRef.current = Math.min(12, Math.max(ROAD_HIT_METERS, me.accuracy ?? ROAD_HIT_METERS));
+    // Keep matching tolerant enough for wooded/rural GPS fixes, while still
+    // bounded so a noisy fix cannot paint an unrelated parallel road.
+    roadHitMetersRef.current = Math.min(18, Math.max(ROAD_HIT_METERS, me.accuracy ?? ROAD_HIT_METERS));
     const pt: [number, number] = [me.lat, me.lng];
     rawFixesRef.current.push(pt);
     if (rawFixesRef.current.length > 600) rawFixesRef.current.splice(0, rawFixesRef.current.length - 600);
@@ -974,6 +970,7 @@ export default function MuhuMap({ points, tracks, savedSegments, me, onSelect, o
       return;
     }
     matchAnchorRef.current = pt;
+    processPointRef.current(pt, true);
   }, [me, mapReady]);
 
   useEffect(() => {
