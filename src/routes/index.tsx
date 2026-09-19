@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { listFirebaseGroups } from "@/lib/firebase-data";
@@ -193,6 +193,8 @@ function AddPointSheet({
   onClose: () => void;
 }) {
   const [title, setTitle] = useState("");
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
     if (!me) {
@@ -213,7 +215,14 @@ function AddPointSheet({
     <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-lg">
       <p className="font-display text-lg text-foreground">Uus punkt siin</p>
       <input
+        ref={inputRef}
         value={title}
+        readOnly={!editing}
+        onPointerDown={() => {
+          if (editing) return;
+          setEditing(true);
+          window.setTimeout(() => inputRef.current?.focus(), 0);
+        }}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Pealkiri, nt. Koguva sadam"
         className="w-full rounded-xl border border-input bg-background px-4 py-3 outline-none focus:border-accent"
